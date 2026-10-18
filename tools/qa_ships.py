@@ -17,7 +17,7 @@ process=None;pid=None;counter=0;config_before=None
 before=fingerprint(ORIGINAL_SAVES)
 def control(**changes):
  global counter
- counter+=1;c=dict(counter=counter,qa_focus=1,mutate=0,mutate_hud=int(ui_mutation),mutate_sharing=int(sharing_mutation));c.update(changes)
+ counter+=1;c=dict(counter=counter,qa_focus=1,mutate=0,rescue_mode=int('--polish' in sys.argv),mutate_hud=int(ui_mutation),mutate_sharing=int(sharing_mutation));c.update(changes)
  temp=runtime/'ship-control.pending';temp.write_text(''.join(f'{k}={v}\n' for k,v in c.items()));os.replace(temp,runtime/'ship-control.txt');return counter
 def rows(metrics=False):return [r for r in read_jsonl(runtime/'ship-telemetry.jsonl') if bool(r.get('metrics'))==metrics]
 def check(name,condition,details):
@@ -65,10 +65,158 @@ try:
  joined=wait(lambda: next((r for r in reversed(rows()) if r.get('ready') and r['p2']>=100000),None))
  check('two distinct native player ships',joined['p1']!=joined['p2'] and joined['p1_asset']==joined['p2_asset']==603,joined)
  check('two distinct build owners',joined['b1']!=joined['b2'] and joined['hull1']>0 and joined['hull2']>0,joined)
+ if '--starter-bank' in sys.argv:
+  def starter():return [r for r in read_jsonl(runtime/'ship-balance.jsonl') if r.get('kind')=='tray']
+  def owned(owner):return next((r for r in reversed(starter()) if r['owner']==owner),None)
+  control(level=4);wait(lambda:rows(True)[-1]['choices1']==rows(True)[-1]['choices2']==4)
+  control(upgrade=1)
+  for owner in (1,2):
+   for stage in (1,2,3):
+    wait(lambda:rows(True)[-1]['ui']==1 and rows(True)[-1]['menu_owner']==owner and rows(True)[-1]['confirmable'] and owned(owner)['stage']==stage,20)
+    if owner==1:ui('press','ENTER')
+    else:
+     control(confirm=1);time.sleep(.2);control()
+    wait(lambda:owned(owner)['stage']>stage,20)
+  wait(lambda:rows(True)[-1]['ui']==rows(True)[-1]['menu_session']==0)
+  check('P1 banked ordinary choice does not block P2 starter choices',owned(1)['budget']==owned(2)['budget']==1 and owned(1)['stage']>=4 and owned(2)['stage']>=4,{'first':owned(1),'second':owned(2)})
+  ui('close');process.wait(timeout=20);check('clean owned banked-starter shutdown',process.returncode==0,process.returncode)
+  report['status']='PASS';raise SystemExit(0)
+ if '--trays' in sys.argv:
+  def trayrows():return [r for r in read_jsonl(runtime/'ship-balance.jsonl') if r.get('kind')=='tray']
+  def tray(owner):return next((r for r in reversed(trayrows()) if r['owner']==owner),None)
+  # Preserve and exercise all three native starter stages for each build.
+  for stage in (1,2,3):
+   control(level=1);wait(lambda:rows(True)[-1]['choices1']>0)
+   control(upgrade=1);wait(lambda:rows(True)[-1]['ui']==1 and rows(True)[-1]['menu_owner']==1 and rows(True)[-1]['confirmable'])
+   ui('press','ENTER')
+   wait(lambda:rows(True)[-1]['ui']==1 and rows(True)[-1]['menu_owner']==2 and rows(True)[-1]['confirmable'],20)
+   control(confirm=1);time.sleep(.2);control()
+   wait(lambda:rows(True)[-1]['ui']==0 and rows(True)[-1]['menu_session']==0,20)
+   check('native starter stage preserved for both ships',tray(1)['stage']==tray(2)['stage']==stage+1,{'first':tray(1),'second':tray(2)})
+  control(augment=8,owner=2);wait(lambda:tray(2)['weapon']==269)
+  control(level=3);wait(lambda:tray(1)['budget']>=3 and tray(2)['budget']>=3)
+  c=control(tray=1,tray_enemy=1);wait(lambda:tray(1)['open']==1)
+  c=control(engine_input=1,engine_key=0x76);wait(lambda:tray(2)['open']==1)
+  control(engine_input=1)
+  check('both personal trays open without native modal UI',rows(True)[-1]['ui']==rows(True)[-1]['paused']==rows(True)[-1]['menu_session']==0,{'first':tray(1),'second':tray(2)})
+  image=runtime.parent/'test-profile/Local/NovaDrift/fullship-screen.png'
+  stamp=image.stat().st_mtime_ns if image.exists() else 0
+  control(screen=1);wait(lambda:image.exists() and image.stat().st_mtime_ns!=stamp)
+  shutil.copy2(image,out/'both-upgrade-trays.png')
+  control(engine_input=1,engine_key=ord('O'));time.sleep(.3)
+  stamp=image.stat().st_mtime_ns
+  control(engine_input=1,engine_key=ord('O'),screen=1);wait(lambda:image.stat().st_mtime_ns!=stamp)
+  shutil.copy2(image,out/'compact-native-inspect.png')
+  control(engine_input=1);time.sleep(.2)
+  first=rows()[-1];time.sleep(1);last=rows()[-1]
+  check('both native ships keep stepping while both trays are open',last['steps1']>first['steps1']+10 and last['steps2']>first['steps2']+10,{'first':first,'last':last})
+  enemy_samples=[r for r in trayrows() if r['owner']==1 and r['open'] and r.get('enemy',-1)>=100000]
+  check('native enemies advance while both players choose',len(enemy_samples)>1 and any(a['enemy']==b['enemy'] and abs(a['enemy_x']-b['enemy_x'])+abs(a['enemy_y']-b['enemy_y'])>1 for a in enemy_samples for b in enemy_samples),enemy_samples[-1] if enemy_samples else [])
+  cards=tray(2)['cards'];rolls=tray(2)['rerolls'];generated=tray(2)['generated']
+  control(tray=2);wait(lambda:tray(2)['open']==0)
+  control(tray=2);wait(lambda:tray(2)['open']==1)
+  check('collapse and reopen preserve exact offers without reroll',tray(2)['cards']==cards and tray(2)['generated']==generated and tray(2)['rerolls']==rolls,tray(2))
+  control(tray=2);wait(lambda:tray(2)['open']==0)
+  original=rows(True)[-1]
+  control(engine_input=1,engine_key=ord('N'));wait(lambda:rows(True)[-1]['shots2']>original['shots2'])
+  check('P2 can fire while P1 keeps choosing',tray(1)['open']==1 and tray(2)['open']==0,rows(True)[-1])
+  budget=tray(2)['budget']
+  control(tray=2,engine_input=1,engine_key=ord('N'));wait(lambda:tray(2)['open']==1)
+  time.sleep(.4)
+  check('held fire does not buy an upgrade on opening',tray(2)['budget']==budget,tray(2))
+  control(engine_input=1);time.sleep(.2)
+  budgets=(tray(1)['budget'],tray(2)['budget']);mods=rows(True)[-1];selected1=tray(1)['cards'][0];selected2=tray(2)['cards'][0]
+  control(tray_action=1,owner=1,tray_pick=0);wait(lambda:tray(1)['budget']==budgets[0]-1)
+  check('P1 native purchase leaves P2 budget and offers unchanged',tray(2)['budget']==budgets[1] and tray(2)['cards']==cards and tray(2)['open']==1,{'first':tray(1),'second':tray(2)})
+  control(engine_input=1,engine_key=ord('N'));wait(lambda:tray(2)['budget']==budgets[1]-1)
+  control(engine_input=1)
+  wait(lambda:selected1 in tray(1)['acquired'] and selected2 in tray(2)['acquired'])
+  check('selected native augments reach the correct builds',selected1 in tray(1)['acquired'] and selected2 in tray(2)['acquired'],{'first':tray(1),'second':tray(2)})
+  check('P2 native purchase consumes only its own choice',tray(1)['budget']==budgets[0]-1 and rows(True)[-1]['ui']==0,{'first':tray(1),'second':tray(2)})
+  if 217 not in tray(2)['acquired']:
+   first_acquired=tray(1)['acquired']
+   control(native_augment=217,owner=2);wait(lambda:217 in tray(2)['acquired'])
+   check('standalone native Turret alarm belongs to P2',tray(1)['acquired']==first_acquired,{'first':tray(1),'second':tray(2)})
+  control(tray=2);wait(lambda:tray(2)['open']==1)
+  first=tray(1);rolls=tray(2)['rerolls'];budgets=tray(2)['budget'];generated=tray(2)['generated']
+  control(tray_action=2,owner=2);wait(lambda:tray(2)['generated']>generated)
+  check('native reroll charges only owner and preserves choices',tray(2)['rerolls']==rolls-1 and tray(2)['budget']==budgets and tray(1)['rerolls']==first['rerolls'],{'first':tray(1),'second':tray(2)})
+  before_failure=tray(2)
+  control(tray_action=2,owner=2,tray_fail=1);wait(lambda:tray(2)['failed']>before_failure['failed'])
+  check('failed native reroll restores currency and exact offers',all(tray(2)[key]==before_failure[key] for key in ('cards','rerolls','budget','stage','bans')),{'before':before_failure,'after':tray(2)})
+  control()
+  # Change P2 to native Researcher, then use the real banish entry point.
+  control(tray=2);wait(lambda:tray(2)['open']==0)
+  control(augment=24,owner=2);wait(lambda:tray(2)['body']==8)
+  control(tray=2);wait(lambda:tray(2)['open']==1)
+  generation_before=tray(2)['generated'];budget=tray(2)['budget'];rolls=tray(2)['rerolls'];partner_rolls=tray(1)['rerolls']
+  control(tray_action=3,owner=2,tray_pick=0)
+  wait(lambda:tray(2)['generated']>generation_before)
+  check('Researcher native banish charges only that player',tray(2)['rerolls']<rolls and tray(2)['budget']==budget and tray(1)['rerolls']==partner_rolls,{'first':tray(1),'second':tray(2)})
+  before_failure=tray(2)
+  control(tray_action=3,owner=2,tray_pick=0,tray_fail=1);wait(lambda:tray(2)['failed']>before_failure['failed'])
+  check('failed native banish restores ban list currency and offers',all(tray(2)[key]==before_failure[key] for key in ('cards','rerolls','budget','stage','bans')),{'before':before_failure,'after':tray(2)})
+  control()
+  # Confirm an actually offered native gear replacement as well as mods.
+  before_gear=tray(2);partner_gear=tray(1)
+  control(tray_action=1,owner=2,tray_pick=len(before_gear['cards'])-1);wait(lambda:tray(2)['budget']==before_gear['budget']-1)
+  wait(lambda:any(tray(2)[key]!=before_gear[key] for key in ('weapon','body','shield_type')))
+  check('native gear replacement belongs only to buyer',all(tray(1)[key]==partner_gear[key] for key in ('weapon','body','shield_type','budget')),{'before':before_gear,'after':tray(2)})
+  control(tray=2);wait(lambda:tray(2)['open']==1)
+  check('temporary native brokers release their lists',all(r.get('leaked_lists')==0 for r in trayrows()),tray(2))
+  ui('press','ESCAPE');wait(lambda:rows(True)[-1]['paused']==1)
+  ui('press','ESCAPE');wait(lambda:rows(True)[-1]['paused']==0)
+  check('manual pause survives personal tray use',tray(2)['open']==1 and rows(True)[-1]['ui']==0,tray(2))
+  control(tray=2);wait(lambda:tray(2)['open']==0)
+  control(native_augment=20,owner=2);wait(lambda:tray(2)['helix_helpers']>0)
+  time.sleep(.8)
+  check('P2 Orbital shield helpers keep their own build context',tray(2)['helix_helpers']>0 and rows(True)[-1]['ui']==0,tray(2))
+  control(tray=2);wait(lambda:tray(2)['open']==1)
+  control(kill=2);wait(lambda:tray(2)['open']==0 and rows()[-1]['p2']==-1)
+  check('ship death invalidates that owner offers',tray(2)['cards']==[],tray(2))
+  ui('close');process.wait(timeout=20);check('clean owned tray shutdown',process.returncode==0,process.returncode)
+  report['status']='PASS';raise SystemExit(0)
+ if '--polish' in sys.argv:
+  def flow_rows():return read_jsonl(runtime/'ship-balance.jsonl')
+  def state():return next((r for r in reversed(flow_rows()) if r.get('kind')=='state'),None)
+  def rescue(owner):return next((r for r in reversed(flow_rows()) if r.get('kind')=='rescue' and r['owner']==owner),None)
+  wait(lambda:state() and state()['zoom_scale']>=1.19999)
+  zoom=[r['zoom_scale'] for r in flow_rows() if r.get('kind')=='state' and r.get('zoom_target')==1.2]
+  check('joining animates through intermediate native view scales',any(1.001<x<1.199 for x in zoom) and zoom[-1]>=1.19999,zoom)
+  initial=rows()[-1];generation=initial['generation'];builds=(initial['b1'],initial['b2'])
+  for owner in (2,1):
+   c=control(kill=owner);wait(lambda:rows()[-1]['p'+str(owner)]==-1)
+   wait(lambda:rescue(owner) and rescue(owner)['down']==1)
+   time.sleep(.7);check('death creates a delayed revive beacon',rescue(owner)['age']<5 and rescue(owner)['progress']==0,rescue(owner))
+   wait(lambda:state()['zoom_scale']<=1.00001)
+   c=control(rescue_hold=owner)
+   wait(lambda:rescue(owner)['age']>=5 and rescue(owner)['progress']>.3,10)
+   ui('press','ESCAPE');wait(lambda:rows(True)[-1]['paused']==1)
+   paused=rescue(owner)['progress'];time.sleep(.6)
+   check('native pause freezes revive progress',abs(rescue(owner)['progress']-paused)<.04,rescue(owner))
+   ui('press','ESCAPE');wait(lambda:rows(True)[-1]['paused']==0)
+   revived=wait(lambda:rows()[-1] if rows()[-1]['p'+str(owner)]>=100000 else None,8)
+   wait(lambda:rescue(owner)['down']==0)
+   health=rescue(owner)
+   check('native revive preserves both builds and run generation',revived['generation']==generation and (revived['b1'],revived['b2'])==builds,revived)
+   check('revive returns half hull with native protection',.49<health['hull']/health['hullmax']<.51 and health['invulnerability']>90,health)
+   wait(lambda:state()['zoom_scale']>=1.19999)
+   c=control(collision=owner)
+   collision=wait(lambda:next((r for r in reversed(flow_rows()) if r.get('kind')=='collision_probe' and r['counter']==c),None))
+   check('native revive protection rejects enemy projectile collision',collision['timer']>0 and collision['hull']==collision['hull_after'] and collision['shield']==collision['shield_after'] and collision['partner_timer']==collision['partner_timer_after'],collision)
+   wait(lambda:rescue(owner)['invulnerability']==0,8)
+   c=control(collision=owner)
+   collision=wait(lambda:next((r for r in reversed(flow_rows()) if r.get('kind')=='collision_probe' and r['counter']==c),None))
+   check('native protection expires and the same collision can damage',collision['timer']==0 and collision['hull_after']+collision['shield_after']<collision['hull']+collision['shield'],collision)
+  c=control(kill=1);wait(lambda:rows()[-1]['p1']==-1)
+  c=control(kill=2);wait(lambda:rows(True)[-1]['game_over']==1)
+  time.sleep(.5);check('both dead retain native game over without automatic revival',rows()[-1]['p1']==rows()[-1]['p2']==-1,rows(True)[-1])
+  ui('close');process.wait(timeout=20);check('clean owned polish shutdown',process.returncode==0,process.returncode)
+  report['status']='PASS';raise SystemExit(0)
  if '--balance' in sys.argv:
   def balance_rows():return read_jsonl(runtime/'ship-balance.jsonl')
   def state():return next((r for r in reversed(balance_rows()) if r.get('kind')=='state'),None)
-  wait(lambda:state() and state()['width']>0)
+  wait(lambda:state() and state()['width']>0 and state().get('zoom_scale',1.2)>1.19999)
   c=control(balance=1,balance_mutate=int('--mutation-balance-target' in sys.argv))
   wait(lambda:any(r.get('kind')=='probe_done' and r['counter']==c for r in balance_rows()))
   evidence=[r for r in balance_rows() if r.get('counter')==c];targets={r['phase']:r for r in evidence if r['kind']=='target_probe'}

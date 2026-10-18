@@ -15,6 +15,8 @@ std::array<int,1024> hostile_cache{};
 FILE* trace=nullptr;
 unsigned long long ai_calls[3]{},xp_calls=0,arena_updates=0;
 double last_native_width=0,last_native_height=0,last_arena_width=0,last_arena_height=0;
+double last_native_x=0,last_native_y=0;
+ndship::flow::Zoom zoom;
 bool Active(){return profile.enabled&&ready&&!joining&&!ndship::lifecycle::IsTearingDown();}
 int Living(){return int(Resolve(ships[1])!=nullptr)+int(Resolve(ships[2])!=nullptr);}
 bool Hostile(void* self){
@@ -44,14 +46,22 @@ int Select(void* self){
  auto& previous=targets[Id(self)];previous=ndship::balance::Target(d1,d2,alive1,alive2,previous);return previous;
 }
 void ScaleCamera(void* self){
- if(!Active()||profile.arena_scale==1)return;
+ if(!Active())return;
  RValue camera;if(!AurieSuccess(api->GetBuiltin("view_camera",(CInstance*)self,0,camera)))return;
  const double w=Builtin("camera_get_view_width",{camera},self).ToDouble(),h=Builtin("camera_get_view_height",{camera},self).ToDouble();
  const double x=Builtin("camera_get_view_x",{camera},self).ToDouble(),y=Builtin("camera_get_view_y",{camera},self).ToDouble();
  if(!(w>0&&h>0&&std::isfinite(w)&&std::isfinite(h)))return;
- last_native_width=w;last_native_height=h;last_arena_width=w*profile.arena_scale;last_arena_height=h*profile.arena_scale;
+ last_native_width=w;last_native_height=h;last_native_x=x;last_native_y=y;last_arena_width=w*zoom.Value();last_arena_height=h*zoom.Value();
  Builtin("camera_set_view_size",{camera,RValue(last_arena_width),RValue(last_arena_height)},self);
  Builtin("camera_set_view_pos",{camera,RValue(x-(last_arena_width-w)/2),RValue(y-(last_arena_height-h)/2)},self);++arena_updates;
+}
+void AdvanceZoom(double seconds){
+ zoom.Target(Active()&&Living()>1?profile.arena_scale:1.0);double before=zoom.Value();zoom.Advance(seconds);
+ if(!Active()||std::abs(zoom.Value()-before)<1e-10||last_native_width<=0)return;
+ auto controller=Resolve(controller_id);RValue camera;if(!controller||!AurieSuccess(api->GetBuiltin("view_camera",(CInstance*)controller,0,camera)))return;
+ Builtin("camera_set_view_size",{camera,RValue(last_native_width),RValue(last_native_height)},controller);
+ Builtin("camera_set_view_pos",{camera,RValue(last_native_x),RValue(last_native_y)},controller);
+ ScaleCamera(controller);nd::RValue ignored{};ignored.kind=5;original_view_dimensions(controller,controller,&ignored,0,nullptr);
 }
 nd::RValue* ViewDimensions(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
  if(camera_scope)ScaleCamera(s);return original_view_dimensions(s,o,r,n,a);
@@ -114,6 +124,6 @@ void State(int counter){
  if(!trace||!ready||!globals)return;
  double choices[3]{},effective[3]{},added[3]{};
  for(int owner=1;owner<=2;++owner){ndship::OwnerScope scope(owner);choices[owner]=Global(0x1af8ce8);effective[owner]=Global(0x1af98c8);added[owner]=Global(0x1af8bc8);}
- std::fprintf(trace,"{\"kind\":\"state\",\"counter\":%d,\"level\":%.8f,\"base_level\":%.8f,\"choices1\":%.8f,\"choices2\":%.8f,\"effective1\":%.8f,\"effective2\":%.8f,\"added1\":%.8f,\"added2\":%.8f,\"width\":%.8f,\"height\":%.8f,\"ai1\":%llu,\"ai2\":%llu,\"living\":%d}\n",counter,Global(0x1af9148),Global(0x1afd8f8),choices[1],choices[2],effective[1],effective[2],added[1],added[2],Global(0x1af7468),Global(0x1af7418),ai_calls[1],ai_calls[2],Living());std::fflush(trace);
+ std::fprintf(trace,"{\"kind\":\"state\",\"counter\":%d,\"level\":%.8f,\"base_level\":%.8f,\"choices1\":%.8f,\"choices2\":%.8f,\"effective1\":%.8f,\"effective2\":%.8f,\"added1\":%.8f,\"added2\":%.8f,\"width\":%.8f,\"height\":%.8f,\"ai1\":%llu,\"ai2\":%llu,\"living\":%d,\"zoom_scale\":%.8f,\"zoom_target\":%.8f}\n",counter,Global(0x1af9148),Global(0x1afd8f8),choices[1],choices[2],effective[1],effective[2],added[1],added[2],Global(0x1af7468),Global(0x1af7418),ai_calls[1],ai_calls[2],Living(),zoom.Value(),zoom.TargetValue());std::fflush(trace);
 }
 }

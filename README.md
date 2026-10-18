@@ -3,7 +3,8 @@
 Experimental two-ship co-op for **Nova Drift 1.2.38.4**, Steam build **25890040**,
 Windows x64 (GameMaker YYC). Both ships share the arena and XP. Each keeps its
 own weapon, body, shield, augments, rerolls and upgrade choices. Each level gives
-both players a turn in the game's upgrade screen.
+each player a choice they can bank and use during combat. Both personal upgrade
+trays can be open at once; the teammate keeps playing.
 
 This repository contains the mod's source and tools. Bring your own matching
 Steam installation; game files, saves, dependencies and compiled binaries are
@@ -37,6 +38,16 @@ their buyer. Native boss order and wave timers are preserved.
 Edit `runtime\coop-balance.ini` and restart to tune the preset. See
 [balance details and coverage](docs/BALANCE.md).
 
+## Reviving and zoom
+
+The arena eases between the single-ship and two-ship view over 0.85 seconds.
+A downed ship leaves a beacon in its color. After five gameplay seconds, stay
+within 145 world units for three seconds to revive it. Progress fades when the
+teammate moves away and freezes during pause. The revived ship keeps its build,
+returns with half its effective hull and an empty shield, and receives the
+native 180-tick protection timer. Both ships dying ends the run normally.
+F8 can join P2 before automatic joining; it no longer gives a free redeploy.
+
 ## Controls
 
 **P1, red:** mouse aims; left button thrusts; right button fires. These are the
@@ -56,7 +67,7 @@ steering turns toward the pressed direction and retains native momentum.
 | Strafe left / right | Semicolon / apostrophe |
 | Strafe forward / back | Left / right bracket |
 | Strafe modifier | Right Alt |
-| Redeploy P2, retaining its build | F8 |
+| Open / close personal upgrades | F7 (controller: Back) |
 | Configure P2 | F6 |
 
 F6 pauses play and opens the control editor. `ConfigureP2.cmd` opens it separately.
@@ -67,7 +78,18 @@ Physical controller hardware has not been tested.
 
 Both HUDs use native health, shield and status rendering with red/gold accents.
 Control hints fade; no numeric health or defense values are added. Upgrades use
-the native layout and the choosing ship's accent.
+native offers and artwork in small red/gold hex strips beside the HUD. Initial weapon,
+shield and body selection still uses the native screen. During combat, P1 uses
+middle mouse to open/close a strip, the wheel to browse and left click to choose.
+Hover a hex to inspect its full native description.
+P2 uses F7, movement keys to browse and N to choose; hold O (the configurable
+Formation binding) to inspect, and use Right Shift to close. Native description
+backgrounds, selection frames, icons, fonts and formatted stats are reused.
+Full descriptions stay hidden until hover or Inspect.
+Each tray has reroll and Researcher banish controls. Closing preserves offers
+and does not spend a choice or reroll. Choosing consumes only that ship's input;
+the other ship keeps moving and fighting. Neither player gains immunity while
+choosing. Escape remains a shared pause.
 
 ## Build and install from source
 

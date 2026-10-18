@@ -25,10 +25,12 @@
 #include "ship_surface_hud.hpp"
 #include "ship_input_sharing.hpp"
 #include "ship_balance.hpp"
+#include "ship_coop_flow.hpp"
 using namespace Aurie;
 using namespace YYTK;
 namespace nd=novadrift_native;
 namespace {
+namespace Trays {bool Busy();bool IsOpen(int);bool BlocksInput(int);void Reset();void Capture(void*,const char*);void Tick();void Draw(void*,double,double);void Trace(int);}
 YYTKInterface* api=nullptr; AurieModule* module_self=nullptr; nd::Access access{};
 TRoutine engine_keyboard_check=nullptr;
 std::filesystem::path root; FILE* log_file=nullptr; FILE* telemetry=nullptr; FILE* performance=nullptr; FILE* presentation=nullptr;
@@ -47,6 +49,7 @@ nd::Script original_gain_level=nullptr,original_restart=nullptr;
 using CodeEvent=FunctionWrapper<bool(CInstance*,CInstance*,CCode*,RValue*,int)>;
 bool level_award_inflight=false;
 bool spawning_powers=false,spawning_player=false,ready=false,joining=false;
+int respawn_owner=0;
 int controller_id=-1;
 ndship::config::LiveProfile controls;
 ULONGLONG controls_at=0;
@@ -60,7 +63,7 @@ int upgrade_hint_owner=0,ui_primary=1;bool upgrade_was_open=false;
 void ResetNativeUI(){p2_ui_valid=false;ui_primary=1;hint_until[1]=hint_until[2]=upgrade_hint_until=0;upgrade_was_open=false;upgrade_hint_owner=0;}
 double HintOpacity(ULONGLONG until,ULONGLONG now){return until>now?std::min(1.0,(until-now)/1000.0):0.0;}
 std::string last_commands;
-struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0; } command;
+struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0; } command;
 void Log(const char* t){if(log_file){std::fprintf(log_file,"[%llu] %s\n",GetTickCount64(),t);std::fflush(log_file);}}
 bool Readable(std::uintptr_t p,std::size_t n){MEMORY_BASIC_INFORMATION m{};return p>=0x10000&&p<0x7fffffffffffULL&&n<0x10000&&VirtualQuery((void*)p,&m,sizeof m)&&m.State==MEM_COMMIT&&!(m.Protect&(PAGE_NOACCESS|PAGE_GUARD))&&p+n<=(std::uintptr_t)m.BaseAddress+m.RegionSize;}
 int Id(void* p){return p&&Readable((std::uintptr_t)p,0xc8)&&*(int*)((char*)p+0x7c)==1?*(int*)((char*)p+0xbc):-1;}
@@ -87,6 +90,8 @@ double Global(std::uintptr_t cell){return ((RValue*)GlobalRead(globals,access.id
 void SetGlobal(std::uintptr_t cell,double value){*(RValue*)GlobalWrite(globals,access.id(cell))=RValue(value);}
 RValue Field(void*p,std::uintptr_t cell);
 #include "ship_balance_runtime.hpp"
+bool Respawn(int owner,double x,double y);
+#include "ship_coop_runtime.hpp"
 void ConfigureOverlay(){
  for(auto field:ndship::build::IndependentGlobals)CopyOverlay(field.cell);
  ndship::input::ConfigureInputOverlay([](std::uintptr_t c,nd::RValue v){SetOverlay(c,v.real);});
@@ -112,7 +117,7 @@ void CommandsRead(bool startup=false){
  Commands c;std::istringstream lines(text);std::string line;
  while(std::getline(lines,line)){std::replace(line.begin(),line.end(),'=',' ');std::istringstream e(line);std::string key;int value;if(!(e>>key>>value))continue;
  #define KEY(k) if(key==#k)c.k=value;
- KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate)
+ KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy)
  #undef KEY
  }
  if(qa_mode&&api&&c.engine_key!=command.engine_key){
@@ -124,16 +129,17 @@ void CommandsRead(bool startup=false){
 std::vector<int> OwnedIds(int owner);
 RValue Field(void*p,std::uintptr_t cell){RValue result;if(p)((nd::GetValue)(access.base+0xf16590))(p,access.id(cell),nd::Scalar,(nd::RValue*)&result,false,false);return result;}
 void Telemetry(){
- auto now=GetTickCount64();if(!telemetry||joining||ndship::lifecycle::IsTearingDown()||level_award_inflight||now-telemetry_at<100)return;telemetry_at=now;
+ auto now=GetTickCount64();if(!telemetry||Trays::Busy()||joining||ndship::lifecycle::IsTearingDown()||level_award_inflight||now-telemetry_at<100)return;telemetry_at=now;
  CoopBalance::State(command.counter);
+ CoopFlow::Trace(command.counter);Trays::Trace(command.counter);
  auto p1=Resolve(ships[1]),p2=Resolve(ships[2]),b1=Resolve(powers[1]),b2=Resolve(powers[2]);auto stats=ndship::GetStats();
  std::fprintf(telemetry,"{\"time\":%llu,\"command\":%d,\"generation\":%llu,\"ready\":%d,\"p1\":%d,\"p2\":%d,\"b1\":%d,\"b2\":%d,\"p1_asset\":%d,\"p2_asset\":%d,\"x1\":%.6f,\"y1\":%.6f,\"x2\":%.6f,\"y2\":%.6f,\"angle2\":%.6f,\"hull1\":%.6f,\"hull2\":%.6f,\"rof1\":%.6f,\"rof2\":%.6f,\"steps1\":%llu,\"steps2\":%llu,\"reads\":%llu,\"withs\":%llu}\n",now,command.counter,generation,ready,p1?ships[1]:-1,p2?ships[2]:-1,b1?powers[1]:-1,b2?powers[2]:-1,Asset(p1),Asset(p2),Read(p1,nd::Fields::X),Read(p1,nd::Fields::Y),Read(p2,nd::Fields::X),Read(p2,nd::Fields::Y),Read(p2,nd::Fields::Angle),Read(b1,nd::Fields::Hull),Read(b2,nd::Fields::Hull),Read(b1,0x1aef608),Read(b2,0x1aef608),steps[1],steps[2],stats.read_redirects,stats.with_redirects);std::fflush(telemetry);
  if(qa_mode&&ready&&globals){ndship::OwnerScope one(1);auto choice1=Global(0x1af8ce8),level=Global(0x1af9148);ndship::OwnerScope two(2);auto choice2=Global(0x1af8ce8);
  std::fprintf(telemetry,"{\"time\":%llu,\"command\":%d,\"metrics\":1,\"choices1\":%.6f,\"choices2\":%.6f,\"level\":%.6f,\"shots1\":%llu,\"shots2\":%llu,\"mods1\":%.0f,\"mods2\":%.0f,\"ui\":%d,\"menu_owner\":%d,\"menu_session\":%d,\"xp\":%.6f,\"maxxp\":%.6f,\"weapon1\":%d,\"weapon2\":%d,\"owned1\":%llu,\"owned2\":%llu,\"maxhull1\":%.6f,\"maxhull2\":%.6f,\"context_enabled\":%d,\"confirmable\":%d,\"input_frame\":%llu,\"ui_pos\":%d,\"paused\":%.0f,\"game_over\":%.0f,\"end_score_instances\":%d}\n",now,command.counter,choice1,choice2,level,shots[1],shots[2],b1?(double)Builtin("ds_list_size",{Field(b1,0x1af7678)}).ToInt32():-1,b2?(double)Builtin("ds_list_size",{Field(b2,0x1af7678)}).ToInt32():-1,Builtin("instance_number",{RValue(828)}).ToInt32(),ndship::upgrade::CurrentMenuOwner(),ndship::upgrade::SessionActive(),Read(Resolve(controller_id),0x1a9da98),Read(Resolve(controller_id),0x1afd8e8),b1?(int)Field(b1,0x1af7898).m_i64:-1,b2?(int)Field(b2,0x1af7898).m_i64:-1,OwnedIds(1).size(),OwnedIds(2).size(),Read(b1,0x1af7b78),Read(b2,0x1af7b78),!command.mutate,UIConfirmable(),input_frame.load(std::memory_order_relaxed),UIPos(),Read(Resolve(controller_id),0x1b004b8),Read(Resolve(controller_id),0x1af7718),Builtin("instance_number",{RValue(398)}).ToInt32());std::fflush(telemetry);}
 }
 void PlayerCreate(void* self,void* other){
- int owner=spawning_player?2:1;
- if(owner==1){ResetNativeUI();if(powers[2]>=100000&&!ndship::lifecycle::IsTearingDown())ndship::lifecycle::TeardownOwner(2,ndship::lifecycle::Reason::CanonicalRespawn);ndship::upgrade::Reset();ships[2]=-1;powers[2]=-1;ready=false;owners.clear();ndship::ClearOwnedInstances();ndship::ClearBindings();if(Resolve(powers[1])){Tag(Resolve(powers[1]),1);ndship::Bind(1,621,powers[1]);ndship::Bind(0,621,powers[1]);}steps[1]=steps[2]=0;++generation;}
+ int owner=respawn_owner?respawn_owner:(spawning_player?2:1);
+ if(owner==1&&!respawn_owner){CoopFlow::Reset();Trays::Reset();ResetNativeUI();if(powers[2]>=100000&&!ndship::lifecycle::IsTearingDown())ndship::lifecycle::TeardownOwner(2,ndship::lifecycle::Reason::CanonicalRespawn);ndship::upgrade::Reset();ships[2]=-1;powers[2]=-1;ready=false;owners.clear();ndship::ClearOwnedInstances();ndship::ClearBindings();if(Resolve(powers[1])){Tag(Resolve(powers[1]),1);ndship::Bind(1,621,powers[1]);ndship::Bind(0,621,powers[1]);}steps[1]=steps[2]=0;++generation;}
  ships[owner]=Id(self);Tag(self,owner);ndship::Bind(owner,603,Id(self));if(owner==1)ndship::Bind(0,603,Id(self));
  ndship::OwnerScope scope(owner);InitializeGlobals();original_player_create(self,other);
  char t[150];std::snprintf(t,sizeof t,"native Player Create owner=%d id=%d asset=%d",owner,Id(self),Asset(self));Log(t);
@@ -145,10 +151,25 @@ void PowersCreate(void* self,void* other){
  char t[130];std::snprintf(t,sizeof t,"native Powers Create owner=%d id=%d",owner,Id(self));Log(t);
 }
 void Script(std::uintptr_t rva,void* self){nd::RValue result{};result.kind=5;((nd::Script)(access.base+rva))(self,self,&result,0,nullptr);}
+bool Respawn(int owner,double x,double y){
+ if(owner<1||owner>2||Resolve(ships[owner])||!Resolve(powers[owner]))return false;
+ joining=true;ndship::OwnerScope scope(owner);auto build=Resolve(powers[owner]);respawn_owner=owner;
+ Builtin("instance_create_depth",{RValue(x),RValue(y),RValue(0.0),RValue(603)});respawn_owner=0;
+ auto ship=Resolve(ships[owner]);if(!ship){joining=false;Log("Native revive creation failed");return false;}
+ for(auto cell:{0x1afc928ULL,0x1afc8e8ULL,0x1afc8d8ULL})access.set(build,cell,-4);
+ Script(0x5fe60,build);Script(0x4c79f0,build);
+ const double maximum=Read(build,0x1af7b78,0),effective=Read(build,0x1aeef08,0),hull=effective*.5;
+ if(maximum>0&&effective>0){access.set(build,nd::Fields::Hull,hull);access.set(build,0x1aedbc8,hull/maximum);access.set(build,0x1aedc98,hull/maximum);}
+ access.set(build,0x1af7fd8,0);access.set(build,0x1aedb98,0);access.set(build,0x1af7f98,std::max(180.0,Read(build,0x1af7f98,0)));
+ for(auto cell:{nd::Fields::X,(std::uintptr_t)0x1af4b78})access.set(ship,cell,x);
+ for(auto cell:{nd::Fields::Y,(std::uintptr_t)0x1af4b68})access.set(ship,cell,y);
+ access.set(ship,nd::Fields::HSpeed,0);access.set(ship,nd::Fields::VSpeed,0);
+ if(owner==2)p2_ui_valid=false;
+ joining=false;CoopFlow::rescues[owner].Reset();hint_until[owner]=GetTickCount64()+2500;Log("Native teammate revive: preserved build, half hull, temporary protection");return true;
+}
 void Join(){
  if(ready&&!Resolve(ships[2])&&Resolve(powers[2])&&Resolve(ships[1])){
-  joining=true;ndship::OwnerScope scope(2);auto b=Resolve(powers[2]);spawning_player=true;
-  Builtin("instance_create_depth",{RValue(Read(Resolve(ships[1]),nd::Fields::X)+70),RValue(Read(Resolve(ships[1]),nd::Fields::Y)),RValue(0.0),RValue(603)});spawning_player=false;for(auto cell:{0x1afc928ULL,0x1afc8e8ULL,0x1afc8d8ULL})access.set(b,cell,-4);Script(0x5fe60,b);Script(0x4c79f0,b);double healed=Read(b,0x1aeef08,0),max_hull=Read(b,0x1af7b78,0);if(healed>0&&max_hull>0){access.set(b,0x1aedbc8,healed/max_hull);access.set(b,0x1aedc98,healed/max_hull);access.set(b,nd::Fields::Hull,healed);}access.set(b,0x1af7fd8,std::max(0.0,Read(b,0x1afa338,0)));joining=false;hint_until[2]=GetTickCount64()+4500;Log("P2 redeployed using preserved independent build");return;
+  if(qa_mode)Respawn(2,Read(Resolve(ships[1]),nd::Fields::X)+70,Read(Resolve(ships[1]),nd::Fields::Y));return;
  }
  if(!original_global_read||!original_global_write)return;
  if(ready||joining||!Resolve(ships[1])||!Resolve(powers[1]))return;joining=true;Log("join begin");
@@ -184,7 +205,7 @@ void PlayerStep2(void* self,void* other){
  int owner=Owner(self);ndship::OwnerScope scope(owner);original_player_step2(self,other);
  if(ready&&owner>0&&Resolve(ships[owner])==self)ndship::hud::TintShipVisual(api,(CInstance*)self,owner);
 }
-void PlayerDestroy(void* self,void* other){int owner=Owner(self);ndship::OwnerScope scope(owner);if(owner>0&&!ndship::lifecycle::IsTearingDown())ndship::lifecycle::TeardownOwner(owner,ndship::lifecycle::Reason::ShipDeath,Id(self));if(ndship::lifecycle::ShouldRunNativePlayerDestroy(owner,Resolve(ships[owner==2?1:2])!=nullptr))original_player_destroy(self,other);Log("native Player Destroy: global effects suppressed while partner survives");}
+void PlayerDestroy(void* self,void* other){int owner=Owner(self);ndship::OwnerScope scope(owner);if(owner>0&&!ndship::lifecycle::IsTearingDown()){CoopFlow::Down(owner,self);ndship::lifecycle::TeardownOwner(owner,ndship::lifecycle::Reason::ShipDeath,Id(self));}if(ndship::lifecycle::ShouldRunNativePlayerDestroy(owner,Resolve(ships[owner==2?1:2])!=nullptr))original_player_destroy(self,other);Log("native Player Destroy: global effects suppressed while partner survives");}
 TRoutine original_exists=nullptr,original_focus=nullptr;
 
 void Focus(RValue& r,CInstance* s,CInstance* o,int n,RValue* a){if(command.qa_focus){r=RValue(true);return;}original_focus(r,s,o,n,a);}
@@ -209,6 +230,7 @@ void CodeCallback(CodeEvent& event){
  int owner=self_owner?self_owner:ndship::active_owner;
  if(!owner&&other!=self)owner=Owner(other);
  const char* name=code?code->GetName():nullptr;
+ Trays::Capture(self,name);
  if(asset==377&&name&&std::strstr(name,"_Step_0")){
   if(ndship::upgrade::SessionActive())owner=ndship::upgrade::CurrentMenuOwner();
   else if(ready&&!HasShip(1)&&HasShip(2))owner=2;
@@ -223,13 +245,14 @@ void CodeCallback(CodeEvent& event){
  if(name&&(std::strstr(name,"_Step_")||std::strstr(name,"_Alarm_")||std::strstr(name,"_Create_")))attention=CoopBalance::Select(self);
  ndship::OwnerScope scope(owner);
  {ndship::TargetScope target(attention);event.Call();}
+ if(asset==377&&name&&std::strstr(name,"_Step_0")){CoopFlow::Tick();Trays::Tick();}
  if(ready&&owner&&name){
   if(ndship::hud::IsShipVisualAsset(asset)&&std::strstr(name,"_Create_"))ndship::hud::TintShipVisual(api,self,owner);
 
  }
  if(name&&(std::strstr(name,"_Destroy_")||std::strstr(name,"_CleanUp_"))){owners.erase(self_id);ndship::UnregisterOwnedInstance(self);CoopBalance::targets.erase(self_id);}
  if(qa_mode)Telemetry();
- if(ready&&!joining&&!ndship::lifecycle::IsTearingDown()){
+ if(ready&&!joining&&!Trays::Busy()&&!ndship::lifecycle::IsTearingDown()){
   if(qa_mode)Stimuli();
   ndship::upgrade::ProcessPending();
  }
@@ -270,6 +293,10 @@ void SampleKeyboard(){
 }
 
 nd::RValue* Input(nd::Script original,ndship::input::Edge edge,void* s,void* o,nd::RValue* r,int n,nd::RValue** a){
+ if(Trays::BlocksInput(ndship::active_owner)){
+  bool escape=false;for(int i=0;i<n;++i){double key=0;if(ndship::input::Numeric(a[i],key)&&key==VK_ESCAPE)escape=true;}
+  if(!escape){*(RValue*)r=RValue(false);return r;}
+ }
  if(ndship::active_owner!=2){
   if(ready&&ndship::active_owner==1&&!ndship::upgrade::SessionActive()&&!command.mutate_sharing){
    ndship::input_sharing::KeyStorage storage;auto keys=ndship::input_sharing::FilterNativeKeys(controls.Get(),n,a,storage);
@@ -306,11 +333,15 @@ nd::RValue* SaveRun(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(ready){*(
 void Stimuli(){
  if(!command.qa_focus)return;
  if(CoopBalance::qa_probe_running)return;
+ if(command.rescue_hold>=1&&command.rescue_hold<=2){const int down=command.rescue_hold;auto& r=CoopFlow::rescues[down];auto partner=Resolve(ships[3-down]);if(r.down&&partner){access.set(partner,nd::Fields::X,r.x);access.set(partner,nd::Fields::Y,r.y);access.set(partner,nd::Fields::HSpeed,0);access.set(partner,nd::Fields::VSpeed,0);}}
+ if(command.collision){int owner=command.collision;command.collision=0;CoopFlow::ProbeCollision(owner,command.counter);return;}
  if(command.balance){int mode=command.balance;command.balance=0;CoopBalance::qa_probe_running=true;CoopBalance::Probe(mode,command.counter);CoopBalance::qa_probe_running=false;return;}
  if(command.restart){command.restart=0;if(Builtin("instance_number",{RValue(573)}).ToInt32()==0){Log("QA paused native restart object create");Builtin("instance_create_depth",{RValue(0.0),RValue(0.0),RValue(0.0),RValue(504)});}else Log("QA restart refused: enter native pause first");return;}
  if(command.upgrade){int owner=command.upgrade;command.upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x357de0,c);}}
  if(command.damage){int owner=command.owner;auto b=Resolve(powers[owner]);if(b){access.set(b,nd::Fields::Hull,std::max(1.0,Read(b,nd::Fields::Hull,100)-command.damage));access.set(b,0x1af7fd8,std::max(0.0,Read(b,0x1af7fd8,0)-command.damage));}command.damage=0;}
- if(command.kill){int owner=command.kill;command.kill=0;auto b=Resolve(powers[owner]);if(b)access.set(b,nd::Fields::Hull,0);}
+ if(command.kill){int owner=command.kill;command.kill=0;auto b=Resolve(powers[owner]);if(b){access.set(b,0x1af7f98,0);access.set(b,nd::Fields::Hull,0);}}
+ if(command.tray_enemy){command.tray_enemy=0;ndship::OwnerScope world(0);auto enemy=Builtin("instance_create_depth",{RValue(Global(0x1af7428)+100),RValue(Global(0x1af74a8)+100),RValue(0.0),RValue(252)});auto e=Resolve((int)enemy.m_i64);if(e){access.set(e,nd::Fields::HSpeed,1);access.set(e,nd::Fields::VSpeed,.5);}}
+ if(command.native_augment>0){int asset=command.native_augment,owner=command.owner;command.native_augment=0;ndship::OwnerScope scope(owner);auto ship=Resolve(ships[owner]);nd::RValue args[4]{};args[0].real=Read(ship,nd::Fields::X,0);args[1].real=Read(ship,nd::Fields::Y,0);args[2].kind=15;args[2].integer=0x0100000000000000ULL|(unsigned)asset;args[3].kind=5;nd::RValue* argv[]={args,args+1,args+2,args+3};nd::RValue out{};out.kind=5;((nd::Script)(access.base+0x3a2d60))(ship,ship,&out,4,argv);}
  if(command.augment>0){int asset=command.augment,owner=command.owner;command.augment=0;ndship::OwnerScope scope(owner);auto created=Builtin("instance_create_depth",{RValue(0.0),RValue(0.0),RValue(0.0),RValue(asset)},Resolve(powers[owner]));Tag(Resolve((int)created.m_i64),owner);char t[160];std::snprintf(t,sizeof t,"QA native augment Create asset=%d owner=%d; awaiting engine Alarm",asset,owner);Log(t);}
  if(command.xp){command.xp=0;auto c=Resolve(controller_id);auto player=Resolve(ships[1]);if(!player)player=Resolve(ships[2]);if(c&&player){ndship::OwnerScope owner(1);double factor=Global(0x1affeb8)*Global(0x1aee5c8)*CoopBalance::XPMultiplier();if(factor>0){nd::RValue args[4]{};args[0].real=(Read(c,0x1afd8e8)-Read(c,0x1a9da98)+1)/factor;args[1].real=0;args[2].kind=args[3].kind=13;nd::RValue* argv[]={&args[0],&args[1],&args[2],&args[3]};nd::RValue r{};r.kind=5;CoopBalance::qa_xp_award=true;((nd::Script)(access.base+0x781240))(player,player,&r,4,argv);CoopBalance::qa_xp_award=false;Log("QA native pickup-equivalent XP; awaiting shared Controller expControl");}}}
  if(command.level>0){int count=command.level;command.level=0;auto c=Resolve(controller_id);if(c){nd::RValue r{};r.kind=5;nd::RValue arg{};arg.real=count;nd::RValue* args[]={&arg};++CoopBalance::team_level_scope;((nd::Script)(access.base+0x2fc6c0))(c,c,&r,1,args);--CoopBalance::team_level_scope;}}
@@ -341,6 +372,7 @@ void Forget(int id,void* ptr){owners.erase(id);if(ptr)ndship::UnregisterOwnedIns
 void DisposeList(int handle){Builtin("ds_list_destroy",{RValue(handle)});}
 void BeginTeardown(ndship::lifecycle::Reason reason){joining=true;command.join=command.augment=command.level=command.xp=command.upgrade=0;}
 void EndTeardown(ndship::lifecycle::Reason reason,const ndship::lifecycle::Report& report){
+ if(reason!=ndship::lifecycle::Reason::ShipDeath){CoopFlow::Reset();Trays::Reset();}
  if(reason!=ndship::lifecycle::Reason::ShipDeath){CoopBalance::targets.clear();CoopBalance::spawn_carry=0;}
  if(reason!=ndship::lifecycle::Reason::ShipDeath){ResetNativeUI();ready=false;ships[2]=powers[2]=-1;ndship::ClearBindings();if(Resolve(ships[1])){ndship::Bind(0,603,ships[1]);ndship::Bind(1,603,ships[1]);}if(Resolve(powers[1])){ndship::Bind(0,621,powers[1]);ndship::Bind(1,621,powers[1]);}ndship::upgrade::Reset();}
  if(reason==ndship::lifecycle::Reason::ShipDeath){int survivor=ndship::active_owner==2?1:2;if(Resolve(ships[survivor]))ndship::Bind(0,603,ships[survivor]);}
@@ -348,8 +380,10 @@ void EndTeardown(ndship::lifecycle::Reason reason,const ndship::lifecycle::Repor
 }
 bool HasShip(int owner){auto p=ndship::lifecycle::ResolveExisting(ships[owner]);return p&&!(ndship::lifecycle::FlagsOf(p)&0x100001);}
 double Budget(int owner){if(owner==2&&!ready)return 0;if(ready&&!HasShip(owner))return 0;if(!globals||!original_global_read)return 0;ndship::OwnerScope scope(owner);return Global(0x1af8ce8);}
+void SetBudget(int owner,double value){ndship::OwnerScope scope(owner);SetGlobal(0x1af8ce8,value);}
 void* Controller(){return Resolve(controller_id);}
 int CountUI(){return Builtin("instance_number",{RValue(828)}).ToInt32();}
+#include "ship_trays_runtime.hpp"
 // The game's status renderer caches health and shield animation on Controller.
 // Keep its P2 cache separate while letting native geometry and draw code run.
 constexpr std::uintptr_t UIFields[]={
@@ -497,6 +531,7 @@ void DrawGUI(void*s,void*o){
  if(hide_controls)SetGlobal(0x1b002c8,old_controls);
  input_frame.fetch_add(1,std::memory_order_relaxed);
  if(!ready)return;
+ CoopFlow::Draw(s,gui_width,gui_height);Trays::Draw(s,gui_width,gui_height);
  ndship::perf::Span measure(ndship::perf::Metric::Hud);
  ndship::hud::State state;state.enabled=!command.nativehud;
  state.width=gui_width;state.height=gui_height;
@@ -557,7 +592,8 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  if(!Hook("Balance.ChooseTarget",0xe7a60,(void*)CoopBalance::ChooseTarget,(void**)&CoopBalance::original_choose_target)||!Hook("Balance.UpdateScore",0x781240,(void*)CoopBalance::UpdateScore,(void**)&CoopBalance::original_update_score)||!Hook("Balance.ExpControl",0x2def70,(void*)CoopBalance::ExpControl,(void**)&CoopBalance::original_exp_control))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Balance.Curated",0x61b170,(void*)CoopBalance::Curated,(void**)&CoopBalance::original_curated)||!Hook("Balance.Dynamic",0x62df50,(void*)CoopBalance::Dynamic,(void**)&CoopBalance::original_dynamic)||!Hook("Balance.SpawnParser",0x647cd0,(void*)CoopBalance::SpawnParser,(void**)&CoopBalance::original_spawn_parser))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!ndship::lifecycle::InstallLifecycleHooks(module,access.base,{OwnedIds,Owner,Forget,DisposeList,BeginTeardown,EndTeardown,Log}))return AURIE_MODULE_INITIALIZATION_FAILED;
- if(!ndship::upgrade::Install(module,access.base,{Budget,Controller,CountUI,Log}))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!ndship::upgrade::Install(module,access.base,{Budget,Controller,CountUI,Log,Trays::Eligible,Trays::Request,SetBudget}))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Trays::Install())return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.UIFlash",0x371ea0,(void*)UIFlash,(void**)&original_ui_flash)||!Hook("Ship.UIPositions",0x4483b0,(void*)UIPositions,(void**)&original_ui_positions)||!Hook("Ship.UIRefresh",0x4c79f0,(void*)UIRefresh,(void**)&original_ui_refresh))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.HealthRect",ndship::hud::NativeDrawRectangleRva,(void*)HealthRectangle,(void**)&original_draw_rectangle))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.DrawGUI",0x984ec0,(void*)DrawGUI,(void**)&original_draw_gui))return AURIE_MODULE_INITIALIZATION_FAILED;

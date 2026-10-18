@@ -468,9 +468,13 @@ inline constexpr std::array<Asset,138> ContextEffects{{
     {855,"oWardenTrailL"},
     {856,"oWardenTrailR"},
 }};
-inline bool IsOwned(int index) noexcept { for (const auto& asset:Owned) if(asset.index==index) return true; return false; }
+// Some native augments have no oUpgrades parent (for example Turret and
+// Grandeur). The complete pinned gear/mod definition range is1..229.
+// Orbital also owns oHelixController537 and oHelixOrb538.
+inline bool IsUpgrade(int index) noexcept {return index>=1&&index<=229;}
+inline bool IsOwned(int index) noexcept { if(IsUpgrade(index)||index==537||index==538)return true; for (const auto& asset:Owned) if(asset.index==index) return true; return false; }
 // Generic effects inherit context only when created inside an owned event.
 // They are not registered as owner-filtered selectors: the world uses them too.
 inline bool IsTaggable(int index) noexcept { if(IsOwned(index)) return true; for(const auto& asset:ContextEffects) if(asset.index==index) return true; return false; }
-inline void RegisterOwnershipGroups() noexcept { for(const auto& asset:Owned) ndship::RegisterOwnedAsset(asset.index); }
+inline void RegisterOwnershipGroups() noexcept { for(int index=1;index<=229;++index)ndship::RegisterOwnedAsset(index);ndship::RegisterOwnedAsset(537);ndship::RegisterOwnedAsset(538); for(const auto& asset:Owned) ndship::RegisterOwnedAsset(asset.index); }
 } // namespace ndship::assets

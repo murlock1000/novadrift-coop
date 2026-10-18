@@ -1,5 +1,5 @@
 #pragma once
-// One native upgrade screen, served serially to P1 then P2. Pinned build only.
+// Native starter screens with a callback for personal combat trays. Pinned build only.
 // Install/process/reset on the game thread. No second level award is invoked.
 #include <array>
 #include <cmath>
@@ -18,6 +18,9 @@ struct Callbacks {
     // Unfiltered engine count for asset828; do not use owner-limited query hooks.
     int (*CountUI)()=nullptr;
     void (*Log)(const char*)=nullptr;
+    bool (*Banked)(int owner)=nullptr;
+    void (*OpenTray)(int owner)=nullptr;
+    void (*WriteBudget)(int owner,double budget)=nullptr;
 };
 namespace detail {
 inline Callbacks callbacks{};
@@ -73,16 +76,20 @@ inline bool WorldReady(native::Instance* controller) {
 inline native::RValue* GotoHook(native::Instance* self,native::Instance* other,
                                native::RValue* out,int argc,native::RValue** args) {
     const int requested=ndship::active_owner==2 ? 2 : (session_owner ? session_owner : 1);
+    if(callbacks.Banked&&callbacks.Banked(requested)) {
+        if(callbacks.OpenTray)callbacks.OpenTray(requested);return False(out);
+    }
     if(session_owner && session_owner!=requested) {
         if(requested==2) request_second=true;
         return False(out);
     }
-    // Owner2 can only acquire the shared screen after all P1 choices are spent.
+    // Owner2 acquires the starter screen after P1 leaves it; ordinary P1
+    // choices can remain banked without delaying P2's starter choices.
     // Same-owner native chaining remains unchanged once a session is active.
     if(requested==2 && !session_owner) {
         ndship::OwnerScope canonical(1);
         const double first=callbacks.ReadBudget(1),second=callbacks.ReadBudget(2);
-        if(!std::isfinite(first)||!std::isfinite(second)||first>0||second<=0||!WorldReady(self)) {
+        if(!std::isfinite(first)||!std::isfinite(second)||(first>0&&!(callbacks.Banked&&callbacks.Banked(1)))||second<=0||!WorldReady(self)) {
             request_second=true;return False(out);
         }
     }
@@ -109,16 +116,29 @@ inline native::RValue* GotoDeferredHook(native::Instance* self,native::Instance*
     if(opening_failed) LogOwner("opening declined by native eligibility",owner);
     return result;
 }
+// Native leave otherwise chains another full menu when ordinary choices
+// remain. Hide only that owner's banked budget during synchronous cleanup.
+class BankGuard {
+    int owner_;double budget_=0;bool active_=false;
+public:
+    explicit BankGuard(int owner):owner_(owner){
+        if(callbacks.Banked&&callbacks.WriteBudget&&callbacks.Banked(owner)){
+            budget_=callbacks.ReadBudget(owner);active_=std::isfinite(budget_)&&budget_>0;
+            if(active_)callbacks.WriteBudget(owner,0);
+        }
+    }
+    ~BankGuard(){if(active_){callbacks.WriteBudget(owner_,budget_);if(callbacks.OpenTray)callbacks.OpenTray(owner_);}}
+};
 inline native::RValue* LeaveHook(native::Instance* self,native::Instance* other,
                                 native::RValue* out,int argc,native::RValue** args) {
     const int owner=EffectiveOwner();
-    ndship::OwnerScope scope(owner);
+    ndship::OwnerScope scope(owner);BankGuard bank(owner);
     return original_leave(self,other,out,argc,args);
 }
 inline native::RValue* LeaveDeferredHook(native::Instance* self,native::Instance* other,
                                         native::RValue* out,int argc,native::RValue** args) {
     const int owner=EffectiveOwner();const auto epoch=open_epoch;
-    ndship::OwnerScope scope(owner);
+    ndship::OwnerScope scope(owner);BankGuard bank(owner);
     auto* result=original_leave_deferred(self,other,out,argc,args);
     // A successful goto during original means the native same-owner chain won.
     if(session_owner && open_epoch==epoch) close_completed=true;
@@ -159,10 +179,11 @@ inline void ProcessPending() {
         session_owner=0;close_completed=false;opening_failed=false;
         return; // hand off on a later safe callback, not inside native cleanup
     }
+    if(callbacks.Banked&&callbacks.Banked(2))return;
     if(GetAsyncKeyState(VK_F7)&1) request_second=true;
     const double first=callbacks.ReadBudget(1),second=callbacks.ReadBudget(2);
-    // Automatic handoff also serves newly earned P2 choices if P1 just finished.
-    if(!std::isfinite(first)||!std::isfinite(second)||first>0||second<=0||!WorldReady(controller)) return;
+    // Automatic handoff serves P2 starter choices after P1 leaves the screen.
+    if(!std::isfinite(first)||!std::isfinite(second)||(first>0&&!(callbacks.Banked&&callbacks.Banked(1)))||second<=0||!WorldReady(controller)) return;
     // Automatic delivery and F7 have the same safety gates; no budget is edited.
     request_second=true;
     native::RValue result=build::Undefined();

@@ -12,7 +12,7 @@ native UI and input sharing. Full late-game augment coverage is not established.
 
 Before the switch to Spacewar, actual Steam host/owned guest sessions using the
 Fling launch entry verified decoded game video, LAN P2 upgrade/input/release,
-and public Steam relay traffic. A current-DLL relay run kept both ships alive:
+and public Steam relay traffic. A pre-polish DLL relay run kept both ships alive:
 remote fire produced 26 P2 projectiles; a separate host-mouse phase produced 14
 P1 projectiles. Input affected the intended ship and release stopped fire. An
 earlier relay run disconnected while firing and reconnected through another relay.
@@ -31,7 +31,7 @@ paths, duplicates, exact legacy migration and preserving later user edits.
 Live Spacewar launch on 2026-10-18 passed: Steam app 480 tracked the wrapper →
 launcher → game chain, injected its overlay and exposed Remote Play Together.
 An owned Invite Anyone guest decoded Nova Drift video over the actual public
-Warsaw SDR relay (about 18–19 ms RTT). A 240-sample current-DLL trial kept both
+Warsaw SDR relay (about 18–19 ms RTT). A 240-sample pre-polish DLL trial kept both
 ships alive: guest fire produced 24 P2 projectiles, separate host mouse fire
 produced 12 P1 projectiles, steering affected P2 and release stopped guest fire.
 Guest preferences were restored. This remains a same-PC relay test.
@@ -82,3 +82,41 @@ occasional larger spikes during scripted multi-wave probes. No late-game load
 or exhaustive boss/decoy/trait-combination performance claim is made. Bravado's
 indirect shared-world rarity path retains native context; this preset does not
 aggregate both builds' rarity modifiers. See [balance coverage](BALANCE.md).
+
+
+## Combat trays and revival (October 2026)
+
+The installed polish build passed **101 native integration checks** across the
+37-check regression, 18-check revival/zoom suite, 15-check balance suite,
+26-check compact-tray suite and five-check banked-starter handoff suite. All
+five runs used the same DLL and left original saves unchanged.
+
+The polish integration uses isolated owned runtimes. `qa_ships.py --polish`
+checks intermediate native camera sizes, both death/revive orders, the native
+pause gate, half effective hull, preserved Powers/build IDs and run generation,
+and normal final-player game over. A controlled native enemy-projectile
+collision is rejected during the native revive timer and damages the same ship
+after that timer expires. This demonstrates that collision path; it does not
+claim protection against every direct or damage-over-time source.
+
+`qa_ships.py --trays` exercises each original starter stage, simultaneous
+personal trays, continuing native ship/enemy steps, P2 firing while P1 chooses,
+held-fire rejection, native purchases and acquired mods, owner-local rerolls,
+Researcher banish, generation-failure rollback, native gear replacement, native
+Orbital shield helpers, manual pause and cleanup on death. Normal combat uses
+no persistent native UI828 instance: offer/confirm brokers are created and
+retired synchronously, with native list create/destroy tracking in diagnostics.
+
+The compact view uses the original upgrade hex sprites, `sSelectaWhite`,
+`sTutorialBox`, native fonts and `drawTextCustom`. The full description is shown
+only during hover or Inspect. No extracted game artwork or text is distributed
+in this repository. Standalone augment definitions without the usual parent,
+including Turret and Grandeur, are included in ownership routing; Orbital's
+controller/orbs also retain their ship's context.
+
+These are bounded native integration checks, not an exhaustive validation of
+all late-game trait combinations, controller hardware, or remote friend setups.
+`--starter-bank` additionally verifies that P1 banking an ordinary choice
+never blocks P2 from completing the three native starter choices.
+QA keeps automatic revival disabled in legacy death fixtures; `--polish`
+explicitly enables it. Normal play always uses the teammate-beacon mechanic.

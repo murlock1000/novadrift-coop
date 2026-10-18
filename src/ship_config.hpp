@@ -21,19 +21,19 @@ enum class Device { Keyboard = 0, Controller = 1, Both = 2 };
 enum class Action : std::size_t {
     Up, Left, Down, Right, Fire, Blink, Stabilize, Formation, Deploy,
     Construct1, Construct2, Construct3, Construct4, Construct5,
-    StrafeLeft, StrafeRight, StrafeForward, StrafeBack, Strafe, Count
+    StrafeLeft, StrafeRight, StrafeForward, StrafeBack, Strafe, Upgrade, Count
 };
 inline constexpr std::size_t ActionCount = static_cast<std::size_t>(Action::Count);
 inline constexpr const char* ActionNames[ActionCount] = {
     "up","left","down","right","fire","blink","stabilize","formation","deploy",
     "construct1","construct2","construct3","construct4","construct5",
-    "strafe_left","strafe_right","strafe_forward","strafe_back","strafe_modifier"
+    "strafe_left","strafe_right","strafe_forward","strafe_back","strafe_modifier","upgrade"
 };
 inline constexpr const wchar_t* ActionLabels[ActionCount] = {
     L"Up / tank thrust",L"Left / turn left",L"Down / tank brake",L"Right / turn right",
     L"Fire",L"Blink",L"Stabilize / brake",L"Formation",L"Deploy selected",
     L"Construct 1",L"Construct 2",L"Construct 3",L"Construct 4",L"Construct 5",
-    L"Strafe left",L"Strafe right",L"Strafe forward",L"Strafe back",L"Strafe modifier"
+    L"Strafe left",L"Strafe right",L"Strafe forward",L"Strafe back",L"Strafe modifier",L"Open / close upgrades"
 };
 // XInput button bits; triggers use two otherwise unused bits. Parent normalizes
 // XInput data into these values, never into GameMaker's player1 device index.
@@ -52,11 +52,11 @@ struct Profile {
     double deadzone = 0.22;
     std::array<int, ActionCount> keys = {{
         'I','J','K','L','N',0xa3,0xa1,'O','U',
-        '7','8','9','0',0xbd,0xba,0xde,0xdb,0xdd,0xa5
+        '7','8','9','0',0xbd,0xba,0xde,0xdb,0xdd,0xa5,0x76
     }};
     std::array<std::uint32_t, ActionCount> pad = {{
         1,4,2,8,RightTrigger,0x1000,0x2000,0x8000,0x4000,
-        0,0,0,0,0,0,0,0,0,0x100
+        0,0,0,0,0,0,0,0,0,0x100,0x20
     }};
     int Key(Action action) const noexcept { return keys[static_cast<std::size_t>(action)]; }
     std::uint32_t Pad(Action action) const noexcept { return pad[static_cast<std::size_t>(action)]; }
@@ -64,6 +64,7 @@ struct Profile {
 inline constexpr const wchar_t* FileName = L"p2-controls.ini";
 inline std::string KeyLabel(int key) {
     if(key<0)return "Unbound";
+    if(key>=0x70&&key<=0x87)return "F"+std::to_string(key-0x70+1);
     if((key>='A'&&key<='Z')||(key>='0'&&key<='9'))return std::string(1,static_cast<char>(key));
     switch(key) {
         case 1:return "Mouse left";case 2:return "Mouse right";case 4:return "Mouse middle";

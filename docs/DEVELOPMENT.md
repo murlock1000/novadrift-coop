@@ -42,7 +42,11 @@ executable into the original Steam game folder.
 The host game process owns the world. Both ships are real native Player instances
 with independent Powers/build contexts. Hooks select the right owner for combat,
 upgrades and HUD drawing. Shared XP schedules a native upgrade choice for each
-ship. This is not a custom network simulation: Remote Play streams the same
+ship. Ordinary choices use temporary owner-scoped native offer/confirm
+transactions; no native UI828 instance survives a combat frame.
+`ship_trays_runtime.hpp` owns tray state and input; `ship_coop_flow.hpp` and
+`ship_coop_runtime.hpp` own zoom/revive policy and native integration.
+This is not a custom network simulation: Remote Play streams the same
 screen and forwards guest input to the host.
 
 ## Checks
@@ -65,6 +69,9 @@ with the interactive game/helper closed:
 ```sh
 python3 tools/qa_ships.py
 python3 tools/qa_ships.py --presentation-controls
+python3 tools/qa_ships.py --polish
+python3 tools/qa_ships.py --trays
+python3 tools/qa_ships.py --starter-bank
 python3 tools/qa_launcher.py
 python3 tools/qa_launcher.py --remote-wrapper
 ```

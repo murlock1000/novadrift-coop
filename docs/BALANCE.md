@@ -54,7 +54,10 @@ already-spawned enemies keep their state. Boss health/damage are unchanged.
 ## XP and traits
 
 XP-earned levels advance the shared team level and give each living player their
-own upgrade choice. Builds, rerolls and purchases stay separate.
+own banked upgrade choice. Builds, rerolls and purchases stay separate.
+After the three native starter choices, either player can open a personal tray
+during combat. Both may choose at once; closing preserves the exact offer set.
+No choosing immunity is added, so the teammate can cover the selecting ship.
 
 A trait's bonus levels belong to its buyer. For example, Grandeur's native
 two-level grant becomes two bonus effective levels and two choices for that ship;
