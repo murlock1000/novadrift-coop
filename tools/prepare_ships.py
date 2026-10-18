@@ -10,6 +10,7 @@ from runtime_paths import ROOT, LOCATION, DEFAULT_BASE, ORIGINAL_SAVES, write_pr
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--base', type=Path, default=DEFAULT_BASE)
+parser.add_argument('--no-activate', action='store_true', help='Stage a separate QA copy without changing project shortcuts or active runtime')
 args = parser.parse_args()
 base = args.base.resolve()
 runtime = base / 'runtime'
@@ -61,9 +62,12 @@ subprocess.run([str(ROOT/'local/deps-research/binaries/v2.0.2/AuriePatcher.exe')
                 win(exe), win(runtime/'mods/AurieCore.dll'), 'install'], check=True)
 (base/'PlayCoop.cmd').write_bytes(b'@echo off\r\ncall "%~dp0runtime\\PlayCoop.cmd" %*\r\n')
 (base/'ConfigureP2.cmd').write_bytes(b'@echo off\r\n"%~dp0runtime\\NovaDriftP2Controls.exe"\r\n')
-shutil.copy2(ROOT/'README.md', base/'README.md')
-write_project_shortcuts(base)
-LOCATION.write_text(json.dumps({'runtime': str(runtime), 'windows': win(runtime),
-                               'profile': str(base/'test-profile'),
-                               'exe_sha256': digest(exe)}, indent=2)+'\n')
+for name in ('README.md','README.RemotePlay.md','dependencies.json'):
+    shutil.copy2(ROOT/name,base/name)
+shutil.copytree(ROOT/'docs',base/'docs',dirs_exist_ok=True)
+if not args.no_activate:
+    write_project_shortcuts(base)
+    LOCATION.write_text(json.dumps({'runtime': str(runtime), 'windows': win(runtime),
+                                   'profile': str(base/'test-profile'),
+                                   'exe_sha256': digest(exe)}, indent=2)+'\n')
 print(f'Windows-local runtime: {win(runtime)}')

@@ -24,6 +24,7 @@
 #include "ship_perf.hpp"
 #include "ship_surface_hud.hpp"
 #include "ship_input_sharing.hpp"
+#include "ship_balance.hpp"
 using namespace Aurie;
 using namespace YYTK;
 namespace nd=novadrift_native;
@@ -59,7 +60,7 @@ int upgrade_hint_owner=0,ui_primary=1;bool upgrade_was_open=false;
 void ResetNativeUI(){p2_ui_valid=false;ui_primary=1;hint_until[1]=hint_until[2]=upgrade_hint_until=0;upgrade_was_open=false;upgrade_hint_owner=0;}
 double HintOpacity(ULONGLONG until,ULONGLONG now){return until>now?std::min(1.0,(until-now)/1000.0):0.0;}
 std::string last_commands;
-struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0; } command;
+struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0; } command;
 void Log(const char* t){if(log_file){std::fprintf(log_file,"[%llu] %s\n",GetTickCount64(),t);std::fflush(log_file);}}
 bool Readable(std::uintptr_t p,std::size_t n){MEMORY_BASIC_INFORMATION m{};return p>=0x10000&&p<0x7fffffffffffULL&&n<0x10000&&VirtualQuery((void*)p,&m,sizeof m)&&m.State==MEM_COMMIT&&!(m.Protect&(PAGE_NOACCESS|PAGE_GUARD))&&p+n<=(std::uintptr_t)m.BaseAddress+m.RegionSize;}
 int Id(void* p){return p&&Readable((std::uintptr_t)p,0xc8)&&*(int*)((char*)p+0x7c)==1?*(int*)((char*)p+0xbc):-1;}
@@ -84,6 +85,8 @@ int UIPos(){auto ui=Builtin("instance_find",{RValue(828),RValue(0)});int id=ui.m
 int UIConfirmable(){auto ui=Builtin("instance_find",{RValue(828),RValue(0)});int id=ui.m_Kind==VALUE_REF?(int)ui.m_i64:-1;return Read(Resolve(id),0x1b004a8,0)!=0;}
 double Global(std::uintptr_t cell){return ((RValue*)GlobalRead(globals,access.id(cell)))->ToDouble();}
 void SetGlobal(std::uintptr_t cell,double value){*(RValue*)GlobalWrite(globals,access.id(cell))=RValue(value);}
+RValue Field(void*p,std::uintptr_t cell);
+#include "ship_balance_runtime.hpp"
 void ConfigureOverlay(){
  for(auto field:ndship::build::IndependentGlobals)CopyOverlay(field.cell);
  ndship::input::ConfigureInputOverlay([](std::uintptr_t c,nd::RValue v){SetOverlay(c,v.real);});
@@ -109,7 +112,7 @@ void CommandsRead(bool startup=false){
  Commands c;std::istringstream lines(text);std::string line;
  while(std::getline(lines,line)){std::replace(line.begin(),line.end(),'=',' ');std::istringstream e(line);std::string key;int value;if(!(e>>key>>value))continue;
  #define KEY(k) if(key==#k)c.k=value;
- KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing)
+ KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate)
  #undef KEY
  }
  if(qa_mode&&api&&c.engine_key!=command.engine_key){
@@ -122,6 +125,7 @@ std::vector<int> OwnedIds(int owner);
 RValue Field(void*p,std::uintptr_t cell){RValue result;if(p)((nd::GetValue)(access.base+0xf16590))(p,access.id(cell),nd::Scalar,(nd::RValue*)&result,false,false);return result;}
 void Telemetry(){
  auto now=GetTickCount64();if(!telemetry||joining||ndship::lifecycle::IsTearingDown()||level_award_inflight||now-telemetry_at<100)return;telemetry_at=now;
+ CoopBalance::State(command.counter);
  auto p1=Resolve(ships[1]),p2=Resolve(ships[2]),b1=Resolve(powers[1]),b2=Resolve(powers[2]);auto stats=ndship::GetStats();
  std::fprintf(telemetry,"{\"time\":%llu,\"command\":%d,\"generation\":%llu,\"ready\":%d,\"p1\":%d,\"p2\":%d,\"b1\":%d,\"b2\":%d,\"p1_asset\":%d,\"p2_asset\":%d,\"x1\":%.6f,\"y1\":%.6f,\"x2\":%.6f,\"y2\":%.6f,\"angle2\":%.6f,\"hull1\":%.6f,\"hull2\":%.6f,\"rof1\":%.6f,\"rof2\":%.6f,\"steps1\":%llu,\"steps2\":%llu,\"reads\":%llu,\"withs\":%llu}\n",now,command.counter,generation,ready,p1?ships[1]:-1,p2?ships[2]:-1,b1?powers[1]:-1,b2?powers[2]:-1,Asset(p1),Asset(p2),Read(p1,nd::Fields::X),Read(p1,nd::Fields::Y),Read(p2,nd::Fields::X),Read(p2,nd::Fields::Y),Read(p2,nd::Fields::Angle),Read(b1,nd::Fields::Hull),Read(b2,nd::Fields::Hull),Read(b1,0x1aef608),Read(b2,0x1aef608),steps[1],steps[2],stats.read_redirects,stats.with_redirects);std::fflush(telemetry);
  if(qa_mode&&ready&&globals){ndship::OwnerScope one(1);auto choice1=Global(0x1af8ce8),level=Global(0x1af9148);ndship::OwnerScope two(2);auto choice2=Global(0x1af8ce8);
@@ -168,7 +172,7 @@ void Join(){
  auto p2=Resolve(ships[2]);if(p2){access.set(p2,nd::Fields::X,Read(Resolve(ships[1]),nd::Fields::X)+70);access.set(p2,nd::Fields::Y,Read(Resolve(ships[1]),nd::Fields::Y));}
  if(p2){Script(0x5fe60,dst);for(int owner=1;owner<=2;++owner){auto ship=Resolve(ships[owner]);if(ship){RValue color(ndship::hud::PlayerColor(owner));api->SetBuiltin("image_blend",(CInstance*)ship,NULL_INDEX,color);}}}
  ready=p2!=nullptr;
- if(ready)hint_until[1]=hint_until[2]=GetTickCount64()+4500;
+ if(ready){hint_until[1]=hint_until[2]=GetTickCount64()+4500;SetGlobal(0x1afde48,1);}
  if(ready)for(int owner=1;owner<=2;++owner)for(int id:OwnedIds(owner)){auto visual=Resolve(id);if(ndship::hud::IsShipVisualAsset(Asset(visual)))ndship::hud::TintShipVisual(api,(CInstance*)visual,owner);}
  if(!p2)ndship::lifecycle::TeardownOwner(2,ndship::lifecycle::Reason::JoinFailure);joining=false;Log(ready?"join complete: independent native ship/build":"join failed ship missing");
 }
@@ -215,12 +219,15 @@ void CodeCallback(CodeEvent& event){
   owners[self_id]=owner;ndship::RegisterOwnedInstance(self,owner,self_id);
  }
  if(!owner&&name&&(std::strstr(name,"oUpgrade_")||std::strstr(name,"oLoadout_")))owner=ndship::upgrade::CurrentMenuOwner();
- ndship::OwnerScope scope(owner);event.Call();
+ int attention=0;
+ if(name&&(std::strstr(name,"_Step_")||std::strstr(name,"_Alarm_")||std::strstr(name,"_Create_")))attention=CoopBalance::Select(self);
+ ndship::OwnerScope scope(owner);
+ {ndship::TargetScope target(attention);event.Call();}
  if(ready&&owner&&name){
   if(ndship::hud::IsShipVisualAsset(asset)&&std::strstr(name,"_Create_"))ndship::hud::TintShipVisual(api,self,owner);
 
  }
- if(name&&(std::strstr(name,"_Destroy_")||std::strstr(name,"_CleanUp_"))){owners.erase(self_id);ndship::UnregisterOwnedInstance(self);}
+ if(name&&(std::strstr(name,"_Destroy_")||std::strstr(name,"_CleanUp_"))){owners.erase(self_id);ndship::UnregisterOwnedInstance(self);CoopBalance::targets.erase(self_id);}
  if(qa_mode)Telemetry();
  if(ready&&!joining&&!ndship::lifecycle::IsTearingDown()){
   if(qa_mode)Stimuli();
@@ -298,21 +305,35 @@ nd::Script original_save_run=nullptr;
 nd::RValue* SaveRun(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(ready){*(RValue*)r=RValue(false);return r;}return original_save_run(s,o,r,n,a);}
 void Stimuli(){
  if(!command.qa_focus)return;
+ if(CoopBalance::qa_probe_running)return;
+ if(command.balance){int mode=command.balance;command.balance=0;CoopBalance::qa_probe_running=true;CoopBalance::Probe(mode,command.counter);CoopBalance::qa_probe_running=false;return;}
  if(command.restart){command.restart=0;if(Builtin("instance_number",{RValue(573)}).ToInt32()==0){Log("QA paused native restart object create");Builtin("instance_create_depth",{RValue(0.0),RValue(0.0),RValue(0.0),RValue(504)});}else Log("QA restart refused: enter native pause first");return;}
  if(command.upgrade){int owner=command.upgrade;command.upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x357de0,c);}}
  if(command.damage){int owner=command.owner;auto b=Resolve(powers[owner]);if(b){access.set(b,nd::Fields::Hull,std::max(1.0,Read(b,nd::Fields::Hull,100)-command.damage));access.set(b,0x1af7fd8,std::max(0.0,Read(b,0x1af7fd8,0)-command.damage));}command.damage=0;}
  if(command.kill){int owner=command.kill;command.kill=0;auto b=Resolve(powers[owner]);if(b)access.set(b,nd::Fields::Hull,0);}
  if(command.augment>0){int asset=command.augment,owner=command.owner;command.augment=0;ndship::OwnerScope scope(owner);auto created=Builtin("instance_create_depth",{RValue(0.0),RValue(0.0),RValue(0.0),RValue(asset)},Resolve(powers[owner]));Tag(Resolve((int)created.m_i64),owner);char t[160];std::snprintf(t,sizeof t,"QA native augment Create asset=%d owner=%d; awaiting engine Alarm",asset,owner);Log(t);}
- if(command.xp){command.xp=0;auto c=Resolve(controller_id);auto player=Resolve(ships[1]);if(!player)player=Resolve(ships[2]);if(c&&player){ndship::OwnerScope owner(1);double factor=Global(0x1affeb8)*Global(0x1aee5c8);if(factor>0){nd::RValue args[4]{};args[0].real=(Read(c,0x1afd8e8)-Read(c,0x1a9da98)+1)/factor;args[1].real=0;args[2].kind=args[3].kind=13;nd::RValue* argv[]={&args[0],&args[1],&args[2],&args[3]};nd::RValue r{};r.kind=5;((nd::Script)(access.base+0x781240))(player,player,&r,4,argv);Log("QA native pickup-equivalent XP; awaiting shared Controller expControl");}}}
- if(command.level>0){int count=command.level;command.level=0;auto c=Resolve(controller_id);if(c){nd::RValue r{};r.kind=5;nd::RValue arg{};arg.real=count;nd::RValue* args[]={&arg};((nd::Script)(access.base+0x2fc6c0))(c,c,&r,1,args);}}
+ if(command.xp){command.xp=0;auto c=Resolve(controller_id);auto player=Resolve(ships[1]);if(!player)player=Resolve(ships[2]);if(c&&player){ndship::OwnerScope owner(1);double factor=Global(0x1affeb8)*Global(0x1aee5c8)*CoopBalance::XPMultiplier();if(factor>0){nd::RValue args[4]{};args[0].real=(Read(c,0x1afd8e8)-Read(c,0x1a9da98)+1)/factor;args[1].real=0;args[2].kind=args[3].kind=13;nd::RValue* argv[]={&args[0],&args[1],&args[2],&args[3]};nd::RValue r{};r.kind=5;CoopBalance::qa_xp_award=true;((nd::Script)(access.base+0x781240))(player,player,&r,4,argv);CoopBalance::qa_xp_award=false;Log("QA native pickup-equivalent XP; awaiting shared Controller expControl");}}}
+ if(command.level>0){int count=command.level;command.level=0;auto c=Resolve(controller_id);if(c){nd::RValue r{};r.kind=5;nd::RValue arg{};arg.real=count;nd::RValue* args[]={&arg};++CoopBalance::team_level_scope;((nd::Script)(access.base+0x2fc6c0))(c,c,&r,1,args);--CoopBalance::team_level_scope;}}
  if(command.screen){command.screen=0;save_native_ui=true;Builtin("screen_save",{RValue("fullship-screen.png")});}
 }
 nd::RValue* GainLevel(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
+ // Trait-granted levels (for example Grandeur) belong to their build. Only
+ // Controller XP progression grants the partner a matching upgrade choice.
+ if(ready&&!CoopBalance::team_level_scope){
+  const int owner=ndship::active_owner;
+  if(owner<1||owner>2)return original_gain_level(s,o,r,n,a);
+  level_award_inflight=true;
+  const double team_level=Global(0x1af9148),added=Global(0x1af8bc8);
+  auto out=original_gain_level(s,o,r,n,a);const double delta=Global(0x1af9148)-team_level;
+  SetGlobal(0x1af9148,team_level);SetGlobal(0x1af8bc8,added+delta);SetGlobal(0x1af98c8,team_level+added+delta);
+  level_award_inflight=false;Log("Trait bonus retained by its build; shared XP level preserved");return out;
+ }
  level_award_inflight=true;int primary=ready&&!HasShip(1)&&HasShip(2)?2:1;int second=primary==1?2:1;
  ndship::OwnerScope first(primary);double before=globals?Global(0x1af8ce8):0;auto out=original_gain_level(s,o,r,n,a);double after=globals?Global(0x1af8ce8):0;
  if(ready&&after>before){ndship::OwnerScope partner(second);SetGlobal(0x1af8ce8,Global(0x1af8ce8)+after-before);SetGlobal(0x1af98c8,Global(0x1af9148)+Global(0x1af8bc8));if(HasShip(second))Script(0x4c79f0,Resolve(powers[second]));Log("shared level award mirrored into independent partner choice budget");}
  level_award_inflight=false;return out;
 }
+#include "ship_balance_probe.hpp"
 bool Hook(const char* name,std::uintptr_t rva,void* detour,void** original){auto status=MmCreateHook(module_self,name,(void*)(access.base+rva),detour,original);char t[180];std::snprintf(t,sizeof t,"hook %s RVA=%llx status=%s",name,rva,AurieStatusToString(status));Log(t);return AurieSuccess(status);}
 bool HookBuiltin(const char* name,TRoutine detour,TRoutine& original){void* target=nullptr;auto status=api->GetNamedRoutinePointer(name,&target);return AurieSuccess(status)&&AurieSuccess(MmCreateHook(module_self,name,target,(void*)detour,(void**)&original));}
 std::vector<int> OwnedIds(int owner){std::vector<int> ids;for(auto [id,which]:owners)if(which==owner){auto p=ndship::lifecycle::ResolveExisting(id);int asset=Asset(p);if(ndship::assets::IsOwned(asset)||asset==828||asset==572||asset==674)ids.push_back(id);}return ids;}
@@ -320,6 +341,7 @@ void Forget(int id,void* ptr){owners.erase(id);if(ptr)ndship::UnregisterOwnedIns
 void DisposeList(int handle){Builtin("ds_list_destroy",{RValue(handle)});}
 void BeginTeardown(ndship::lifecycle::Reason reason){joining=true;command.join=command.augment=command.level=command.xp=command.upgrade=0;}
 void EndTeardown(ndship::lifecycle::Reason reason,const ndship::lifecycle::Report& report){
+ if(reason!=ndship::lifecycle::Reason::ShipDeath){CoopBalance::targets.clear();CoopBalance::spawn_carry=0;}
  if(reason!=ndship::lifecycle::Reason::ShipDeath){ResetNativeUI();ready=false;ships[2]=powers[2]=-1;ndship::ClearBindings();if(Resolve(ships[1])){ndship::Bind(0,603,ships[1]);ndship::Bind(1,603,ships[1]);}if(Resolve(powers[1])){ndship::Bind(0,621,powers[1]);ndship::Bind(1,621,powers[1]);}ndship::upgrade::Reset();}
  if(reason==ndship::lifecycle::Reason::ShipDeath){int survivor=ndship::active_owner==2?1:2;if(Resolve(ships[survivor]))ndship::Bind(0,603,ships[survivor]);}
  joining=false;
@@ -517,6 +539,7 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  ndship::perf::SetEnabled(qa_mode||diagnostics);if(qa_mode||diagnostics)performance=_wfsopen((root/L"ship-performance.jsonl").c_str(),L"a",_SH_DENYNO);
  if(qa_mode||diagnostics)presentation=_wfsopen((root/L"ship-ui.jsonl").c_str(),L"a",_SH_DENYNO);
  ReloadControls();api=GetInterface();if(!api)return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;access.base=(uintptr_t)GetModuleHandleW(nullptr);
+ CoopBalance::Load();
  if(!qa_mode&&!diagnostics)if(auto console=GetConsoleWindow())ShowWindow(console,SW_HIDE);
  if(!ndship::signatures::Validate(access.base)){Log("REFUSING native ship hooks: game signatures differ");return AURIE_MODULE_INITIALIZATION_FAILED;}
  ndship::SetOwnerResolver(Owner);ndship::assets::RegisterOwnershipGroups();ndship::RegisterOwnedAsset(674);
@@ -530,6 +553,9 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  if(!Hook("Ship.BlasterCreate",0x8517a0,(void*)BlasterCreate,(void**)&original_blaster_create))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.ProjectileCreate",0xc6c290,(void*)ProjectileCreate,(void**)&original_player_projectile_create)||!Hook("Ship.SaveRunToFile",0x514b50,(void*)SaveRun,(void**)&original_save_run))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.GainLevel",0x2fc6c0,(void*)GainLevel,(void**)&original_gain_level))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Balance.CameraInit",0xbe8d0,(void*)CoopBalance::CameraInit,(void**)&CoopBalance::original_camera_init)||!Hook("Balance.CameraZoom",0xbf2e0,(void*)CoopBalance::CameraZoom,(void**)&CoopBalance::original_camera_zoom)||!Hook("Balance.ViewDimensions",0x78b460,(void*)CoopBalance::ViewDimensions,(void**)&CoopBalance::original_view_dimensions))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Balance.ChooseTarget",0xe7a60,(void*)CoopBalance::ChooseTarget,(void**)&CoopBalance::original_choose_target)||!Hook("Balance.UpdateScore",0x781240,(void*)CoopBalance::UpdateScore,(void**)&CoopBalance::original_update_score)||!Hook("Balance.ExpControl",0x2def70,(void*)CoopBalance::ExpControl,(void**)&CoopBalance::original_exp_control))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Balance.Curated",0x61b170,(void*)CoopBalance::Curated,(void**)&CoopBalance::original_curated)||!Hook("Balance.Dynamic",0x62df50,(void*)CoopBalance::Dynamic,(void**)&CoopBalance::original_dynamic)||!Hook("Balance.SpawnParser",0x647cd0,(void*)CoopBalance::SpawnParser,(void**)&CoopBalance::original_spawn_parser))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!ndship::lifecycle::InstallLifecycleHooks(module,access.base,{OwnedIds,Owner,Forget,DisposeList,BeginTeardown,EndTeardown,Log}))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!ndship::upgrade::Install(module,access.base,{Budget,Controller,CountUI,Log}))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.UIFlash",0x371ea0,(void*)UIFlash,(void**)&original_ui_flash)||!Hook("Ship.UIPositions",0x4483b0,(void*)UIPositions,(void**)&original_ui_positions)||!Hook("Ship.UIRefresh",0x4c79f0,(void*)UIRefresh,(void**)&original_ui_refresh))return AURIE_MODULE_INITIALIZATION_FAILED;

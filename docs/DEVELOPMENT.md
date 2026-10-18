@@ -34,6 +34,7 @@ executable into the original Steam game folder.
 | `src/launch.cpp`, `sandbox.cpp` | Owned process launch, display preference handling, isolated profile and Steam API interception |
 | `src/steam_coop.cpp` | Spacewar launch-option wrapper, setup UI and process lifetime |
 | `src/ship_config_tool.cpp`, `ship_config.hpp` | P2 bindings and editor |
+| `src/ship_balance*.hpp` | Configurable co-op arena, native hostile attention, regular spawn budgets, XP and isolated trait grants |
 | `src/native_abi.hpp`, `ship_signatures.hpp` | Build-specific GameMaker/native interface assumptions |
 | `tools/qa_*.py`, window helpers | Bounded owned-session verification and evidence collection |
 | `src/coop_ally.cpp`, `probe_yy.cpp` | Historical experiments; not the documented default |
@@ -84,3 +85,6 @@ QA defaults to `-inawindow`; explicit display arguments override that default.
 Do not commit game files, copied SDKs/binaries, raw decompilation, saves, Steam
 configuration, invitation links or private runtime logs. Dependency download
 locations and SHA-256 pins belong in `dependencies.json`.
+
+The balance integration suite is `python3 tools/qa_ships.py --balance`; use a
+separate owned QA installation as described in [BALANCE.md](BALANCE.md).

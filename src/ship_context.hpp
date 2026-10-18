@@ -17,6 +17,16 @@
 namespace ndship {
 namespace native = novadrift_native;
 inline thread_local int active_owner = 0;
+// Enemy attention is separate from ownership: targeting P2 must never turn an
+// enemy projectile or effect into a P2-owned weapon.
+inline thread_local int target_owner = 0;
+class TargetScope {
+    int previous_;
+public:
+    explicit TargetScope(int owner) noexcept : previous_(target_owner) {target_owner=owner;}
+    ~TargetScope(){target_owner=previous_;}
+    TargetScope(const TargetScope&)=delete;
+};
 class OwnerScope {
     int previous_;
 public:
@@ -162,13 +172,17 @@ inline void ResetStats() noexcept {
 // instance references and raw instance pointers retain their original meaning.
 // The input can be a shared constant; never modify it or free a borrowed value.
 inline const native::RValue* RemapAssetSelector(const native::RValue* selector, native::RValue& temporary) noexcept {
-    const int owner = active_owner;
+    int owner = active_owner;
     if (!selector || owner < 0 || owner > 2 || !detail::enabled.load(std::memory_order_relaxed)
         || (selector->kind & 0xffffffu) != 15) return selector;
     const auto payload = static_cast<std::uint64_t>(selector->integer);
     if ((payload >> 32) != 0x01000000u) return selector;
     const auto asset = static_cast<std::uint32_t>(payload);
     if (asset >= 1024) return selector;
+    // Generic hostile events redirect attention to a ship only. Powers keeps
+    // its owning/canonical context (enemy HP templates live there too). The
+    // narrow native chooseTarget wrapper explicitly scopes its own queries.
+    if(target_owner>0&&target_owner<=2&&asset==603)owner=target_owner;
     const int id = detail::bindings[owner][asset].load(std::memory_order_relaxed);
     if (id == -1) {
         temporary = *selector;

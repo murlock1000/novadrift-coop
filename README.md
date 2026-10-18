@@ -26,6 +26,17 @@ advertise Remote Play Together. Your friends will see Spacewar while this
 experimental wrapper hosts Nova Drift. See [Steam setup](README.RemotePlay.md)
 for installation, invitations and restoring the original Launch Options.
 
+## Co-op balance
+
+The default preset adds **44% more arena area**, lets hostile AI choose either
+living ship, and increases supported regular enemy groups by roughly **60%**.
+Ordinary pickup XP is **70%** of native value while both ships live; XP-earned
+levels still give each player a separate choice. Trait bonus levels stay with
+their buyer. Native boss order and wave timers are preserved.
+
+Edit `runtime\coop-balance.ini` and restart to tune the preset. See
+[balance details and coverage](docs/BALANCE.md).
+
 ## Controls
 
 **P1, red:** mouse aims; left button thrusts; right button fires. These are the

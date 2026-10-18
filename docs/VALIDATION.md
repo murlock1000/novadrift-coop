@@ -47,3 +47,38 @@ sandbox DLL, native launcher, P2 editor and ship DLL with the documented toolcha
 
 Private evidence, exact per-run hashes, screenshots and process identities stay
 under `local/`; this repository records results without private game artifacts.
+
+## Co-op balance preset (2026-10-18)
+
+The tuned DLL passed **15 native balance checks** in a separate marked QA
+installation, plus the existing **37-check native regression**. Original saves
+matched their baseline after both suites. A deliberate P1-only targeting mutation
+failed the P2-near target/aim assertion, confirming that the check detects the
+original targeting defect.
+
+The balance suite exercised a real native Interceptor choosing P2, P1, P2 across
+a wrap edge, and visible P1 while P2 was cloaked. It checked the native target
+coordinates as well as the resulting instance ID and retained world ownership.
+A separate phase killed P2 through native health/death processing and verified
+that the enemy targeted surviving P1. Controlled AI fixtures explicitly set and
+restore player visibility/positions; they do not bypass cloak logic in normal play.
+
+Native camera publication grew width and height by 1.20. A ship positioned in
+the added margin stayed there after the real wrapPlayer routine, demonstrating
+expanded playable bounds. Regular-wave probes exercised the native Curated and
+Dynamic scripts: seven accepted groups had a total budget of 12 before tuning
+and 19 afterward, with fractional carry. This proves the supported group-budget
+change; it is not an exact count assertion for every deferred enemy in every wave.
+
+Real small/large/mega pickup instances passed through native updateScore with
+0.70 XP scaling; an intro pickup instance's scripted award stayed unscaled. These
+are native award-routine checks, not a full physical pickup-collision matrix.
+Actual native Grandeur Create/Alarm granted two choices and bonus effective
+levels only to its owner, separately for P1 and P2. Subsequent XP progression
+advanced the shared team level and granted a choice to both.
+
+The bounded diagnostic run had frame-interval medians around 16.6–16.8 ms, with
+occasional larger spikes during scripted multi-wave probes. No late-game load
+or exhaustive boss/decoy/trait-combination performance claim is made. Bravado's
+indirect shared-world rarity path retains native context; this preset does not
+aggregate both builds' rarity modifiers. See [balance coverage](BALANCE.md).

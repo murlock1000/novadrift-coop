@@ -38,7 +38,7 @@ def phase(seconds=2,**changes):
  result=[r for r in rows() if r['command']==c]
  check('phase advances native ships',len(result)>5 and result[-1]['steps2']>result[0]['steps2'],result[-1]);return result
 try:
- for name in ['ship-events.log','ship-telemetry.jsonl','ship-ui.jsonl','ship-performance.jsonl','aurie.log','runner.log']:
+ for name in ['ship-events.log','ship-telemetry.jsonl','ship-ui.jsonl','ship-performance.jsonl','aurie.log','runner.log','ship-balance.jsonl']:
   p=runtime/name
   if p.exists():shutil.move(str(p),str(out/('previous-'+name)))
  control()
@@ -65,6 +65,39 @@ try:
  joined=wait(lambda: next((r for r in reversed(rows()) if r.get('ready') and r['p2']>=100000),None))
  check('two distinct native player ships',joined['p1']!=joined['p2'] and joined['p1_asset']==joined['p2_asset']==603,joined)
  check('two distinct build owners',joined['b1']!=joined['b2'] and joined['hull1']>0 and joined['hull2']>0,joined)
+ if '--balance' in sys.argv:
+  def balance_rows():return read_jsonl(runtime/'ship-balance.jsonl')
+  def state():return next((r for r in reversed(balance_rows()) if r.get('kind')=='state'),None)
+  wait(lambda:state() and state()['width']>0)
+  c=control(balance=1,balance_mutate=int('--mutation-balance-target' in sys.argv))
+  wait(lambda:any(r.get('kind')=='probe_done' and r['counter']==c for r in balance_rows()))
+  evidence=[r for r in balance_rows() if r.get('counter')==c];targets={r['phase']:r for r in evidence if r['kind']=='target_probe'}
+  for phase,owner in [('p2_close',2),('p1_close',1),('wrap_p2',2),('p2_cloaked',1)]:
+   r=targets[phase];dx=abs(r['target_x']-r['x'+str(owner)]);dx=min(dx%r['width'],r['width']-dx%r['width'])
+   check('native enemy target and aim: '+phase,r['target']==r['p'+str(owner)] and dx<1 and r['owner']==0,r)
+  arena=next(r for r in evidence if r['kind']=='arena_probe')
+  check('arena grows in both axes without early native wrapping',abs(arena['width']/arena['native_width']-1.2)<.001 and abs(arena['height']/arena['native_height']-1.2)<.001 and abs(arena['inside_x']-arena['after_wrap_x'])<.01 and arena['inside_x']<arena['left']+(arena['width']-arena['native_width'])/2,arena)
+  xp=[r for r in evidence if r['kind']=='xp_probe']
+  check('ordinary XP scaled; scripted intro reward preserved',len(xp)==4 and all(abs(r['delta']/r['native_multiplier']-(1 if r['asset']==285 else .7))<.001 for r in xp),xp)
+  spawns=[r for r in balance_rows() if r['kind']=='spawn'];native=sum(r['native_count'] for r in spawns);tuned=sum(r['tuned_count'] for r in spawns)
+  check('native regular-wave group budget increases with bounded carry',native>0 and tuned>native and abs(tuned-1.6*native)<1.01,{'groups':len(spawns),'native_count':native,'tuned_count':tuned})
+  c=control(kill=2);wait(lambda:rows()[-1]['p2']==-1 and rows()[-1]['p1']>=100000)
+  c=control(balance=2);wait(lambda:any(r.get('kind')=='probe_done' and r['counter']==c for r in balance_rows()))
+  survivor=next(r for r in balance_rows() if r.get('kind')=='target_probe' and r['counter']==c)
+  check('native enemy targets surviving P1 after P2 dies',survivor['target']==survivor['p1'] and survivor['owner']==0,survivor)
+  c=control(join=1);wait(lambda:rows()[-1]['p2']>=100000)
+  prior=state();c=control(augment=114,owner=2)
+  trait2=wait(lambda:state() if state()['counter']==c and state()['added2']==prior['added2']+2 else None)
+  check('P2 native Grandeur grants only P2 bonus choices',trait2['level']==prior['level'] and trait2['base_level']==prior['base_level'] and trait2['choices2']==prior['choices2']+2 and trait2['choices1']==prior['choices1'] and trait2['effective1']==prior['effective1'],{'prior':prior,'after':trait2})
+  prior=trait2;c=control(augment=114,owner=1)
+  trait1=wait(lambda:state() if state()['counter']==c and state()['added1']==prior['added1']+2 else None)
+  check('P1 native Grandeur grants only P1 bonus choices',trait1['level']==prior['level'] and trait1['choices1']==prior['choices1']+2 and trait1['choices2']==prior['choices2'] and trait1['effective2']==prior['effective2'],{'prior':prior,'after':trait1})
+  prior=trait1;c=control(xp=1)
+  level=wait(lambda:state() if state()['counter']==c and state()['level']==prior['level']+1 else None)
+  check('shared XP still grants a separate choice to each build',level['choices1']==prior['choices1']+1 and level['choices2']==prior['choices2']+1,{'prior':prior,'after':level})
+  control(screen=1);time.sleep(.3)
+  ui('close');process.wait(timeout=20);check('clean owned balance shutdown',process.returncode==0,process.returncode)
+  report['status']='PASS';raise SystemExit(0)
  if '--native-preview' in sys.argv:
   image=runtime.parent/'test-profile/Local/NovaDrift/fullship-screen.png'
   old=image.stat().st_mtime_ns if image.exists() else 0
@@ -318,11 +351,12 @@ finally:
   (runtime/f'stop-{pid}.request').write_text('owned fullship QA cleanup')
   try:process.wait(timeout=20)
   except subprocess.TimeoutExpired:report['cleanup_error']='Owned launcher did not stop'
- for name in ['ship-events.log','ship-telemetry.jsonl','ship-ui.jsonl','ship-performance.jsonl','aurie.log']:
+ for name in ['ship-events.log','ship-telemetry.jsonl','ship-ui.jsonl','ship-performance.jsonl','ship-balance.jsonl','aurie.log']:
   p=runtime/name
   if p.exists():(out/name).write_bytes(p.read_bytes())
  preserved=before==fingerprint(ORIGINAL_SAVES)
  report['original_saves_unchanged']=preserved
  if not preserved:report['status']='FAIL'
  (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(out,report['status'],flush=True)
+ if report['status']!='PASS':sys.exit(1)
 sys.exit(0 if report['status']=='PASS' else 1)
