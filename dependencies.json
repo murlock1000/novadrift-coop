@@ -1,0 +1,55 @@
+{
+  "sdk_commit": "d5cc0078bfbfd5907884ad3fe0b3c6cbaa1c3f54",
+  "files": [
+    {
+      "path": "local/deps-research/YYToolkit-v5-experimental/ExamplePlugin/include/Aurie/shared.hpp",
+      "url": "https://raw.githubusercontent.com/AurieFramework/YYToolkit/d5cc0078bfbfd5907884ad3fe0b3c6cbaa1c3f54/ExamplePlugin/include/Aurie/shared.hpp",
+      "sha256": "074ed3413b6e3e0f5f654bb6b29aa2452a7f5f6817fbc47eabb506aabb5c72e4"
+    },
+    {
+      "path": "local/deps-research/YYToolkit-v5-experimental/ExamplePlugin/include/FunctionWrapper/FunctionWrapper.hpp",
+      "url": "https://raw.githubusercontent.com/AurieFramework/YYToolkit/d5cc0078bfbfd5907884ad3fe0b3c6cbaa1c3f54/ExamplePlugin/include/FunctionWrapper/FunctionWrapper.hpp",
+      "sha256": "e72e263dcf3403efb196552fa08f2beea8f46f3ff67ae16c7de2b1599c0bccff"
+    },
+    {
+      "path": "local/deps-research/YYToolkit-v5-experimental/ExamplePlugin/include/YYToolkit/YYTK_Shared.hpp",
+      "url": "https://raw.githubusercontent.com/AurieFramework/YYToolkit/d5cc0078bfbfd5907884ad3fe0b3c6cbaa1c3f54/ExamplePlugin/include/YYToolkit/YYTK_Shared.hpp",
+      "sha256": "6d6666f1db2553ea0c17658bdc53e65c396bc402053d73257038e66bd713d22a"
+    },
+    {
+      "path": "local/deps-research/YYToolkit-v5-experimental/ExamplePlugin/include/YYToolkit/YYTK_Shared_Base.hpp",
+      "url": "https://raw.githubusercontent.com/AurieFramework/YYToolkit/d5cc0078bfbfd5907884ad3fe0b3c6cbaa1c3f54/ExamplePlugin/include/YYToolkit/YYTK_Shared_Base.hpp",
+      "sha256": "48560aae87d0730626e14c714130cc5db968e9c0d9873d98bfa52ce445da0e05"
+    },
+    {
+      "path": "local/deps-research/YYToolkit-v5-experimental/ExamplePlugin/include/YYToolkit/YYTK_Shared_Interface.hpp",
+      "url": "https://raw.githubusercontent.com/AurieFramework/YYToolkit/d5cc0078bfbfd5907884ad3fe0b3c6cbaa1c3f54/ExamplePlugin/include/YYToolkit/YYTK_Shared_Interface.hpp",
+      "sha256": "06e73d85af6a3509bbbec0e141f030aec3a3f000aec9e77e881db0a636f95057"
+    },
+    {
+      "path": "local/deps-research/YYToolkit-v5-experimental/ExamplePlugin/include/YYToolkit/YYTK_Shared_Types.cpp",
+      "url": "https://raw.githubusercontent.com/AurieFramework/YYToolkit/d5cc0078bfbfd5907884ad3fe0b3c6cbaa1c3f54/ExamplePlugin/include/YYToolkit/YYTK_Shared_Types.cpp",
+      "sha256": "e00afd868e1fe3a7c9a395ed9b6c9d5b9530695f7505f8be22e6f8cc5d4ccfaa"
+    },
+    {
+      "path": "local/deps-research/YYToolkit-v5-experimental/ExamplePlugin/include/YYToolkit/YYTK_Shared_Types.hpp",
+      "url": "https://raw.githubusercontent.com/AurieFramework/YYToolkit/d5cc0078bfbfd5907884ad3fe0b3c6cbaa1c3f54/ExamplePlugin/include/YYToolkit/YYTK_Shared_Types.hpp",
+      "sha256": "fabb05bf814d18f0e9238f04613b6bbee30b8aa1d38605fff73f1e2d604ebc11"
+    },
+    {
+      "path": "local/deps-research/binaries/v2.0.2/AurieCore.dll",
+      "url": "https://github.com/AurieFramework/Aurie/releases/download/v2.0.2/AurieCore.dll",
+      "sha256": "18e3a1de980f487a6b3858b673d2030e96984dd96de3a047b43a263a5ba829ae"
+    },
+    {
+      "path": "local/deps-research/binaries/v2.0.2/AuriePatcher.exe",
+      "url": "https://github.com/AurieFramework/Aurie/releases/download/v2.0.2/AuriePatcher.exe",
+      "sha256": "4d3aec439dbba5209ad48fb0a40d6324406247fe678541df9031f5b89363d536"
+    },
+    {
+      "path": "local/deps-research/binaries/v5.0.0c/YYToolkit.dll",
+      "url": "https://github.com/AurieFramework/YYToolkit/releases/download/v5.0.0c/YYToolkit.dll",
+      "sha256": "ae7809f136f9222e5f49393d7ce7c3ad4c375c171308e2414660946d4ba0378a"
+    }
+  ]
+}
