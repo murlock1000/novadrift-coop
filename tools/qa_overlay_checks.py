@@ -94,8 +94,8 @@ def run(ns):
                 for dx in range(-2,3):
                     for dy in range(-2,3):
                         r,g,b=image.getpixel((round(px)+dx,round(py)+dy))
-                        if owner==2:found|=r>145 and g>90 and b<145 and r>g*1.04
-                        else:found|=r>140 and r>g*1.3 and r>b*1.18
+                        if owner==2:found|=r>70 and g>50 and b<155 and r>g*1.10
+                        else:found|=r>65 and r>g*1.3 and r>b*1.10
             hit+=int(found)
         check('native beacon artwork has visible owner-colored client pixels',visible>=20 and hit>=visible*.55,{'owner':owner,'sectors':visible,'colored_sectors':hit,'visual':visual})
         control(rescue_mode=1,rescue_hold=owner)

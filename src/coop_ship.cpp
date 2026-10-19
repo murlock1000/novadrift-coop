@@ -258,6 +258,7 @@ void CodeCallback(CodeEvent& event){
  if(asset==571&&obsolete_tutorial_scope&&name&&std::strstr(name,"_Create_"))hidden_tutorial_effects.insert(self_id);
  if(obsolete_generic)++obsolete_tutorial_scope;
  {ndship::TargetScope target(attention);event.Call();}
+ if(name&&std::strcmp(name,"gml_Object_oBackground_Draw_0")==0)CoopFlow::DrawBackground(self,input_frame.load(std::memory_order_relaxed));
  if(obsolete_generic){--obsolete_tutorial_scope;if(Resolve(self_id)==self){RValue hidden(false);api->SetBuiltin("visible",self,NULL_INDEX,hidden);}}
  if(asset==377&&name&&std::strstr(name,"_Step_0")){if(p1_custom){if(p1_controls.Get().mouse_aim)ndship::Unbind(1,741);else ndship::BindEmpty(1,741);}CoopFlow::Tick();Trays::Tick();}
  if(ready&&owner&&name){
@@ -588,7 +589,6 @@ bool DrawNativeHud(void*s,void*o,int primary,double width,double height){
 // World-space indicators use GUI projection, but stay below every HUD layer.
 void DrawWorldOverlays(void* self,double width,double height){
  if(!ready)return;
- CoopFlow::Draw(self,width,height);
  double view_x=Global(0x1af7428),view_y=Global(0x1af74a8),view_w=Global(0x1af7468),view_h=Global(0x1af7418);
  bool show_markers=!ndship::upgrade::SessionActive()&&Read(Resolve(controller_id),0x1b004b8,0)==0;
  if(show_markers&&view_w>0&&view_h>0)for(int owner=1;owner<=2;++owner)if(auto ship=Resolve(ships[owner])){

@@ -174,3 +174,10 @@ The prebuilt ZIP was extracted and installed by Windows PowerShell into a
 separate owned test copy. Checks exercise payload checksum rejection and
 refusal to install inside the original game. Loader/toolkit downloads are
 hash-pinned. The original Steam executable and original saves remain unchanged.
+
+The following beacon opacity patch passed the 24-check native overlay suite.
+Beacons now draw once after the frontmost background in the world pass, below
+ships, with normal alpha blending and restored GPU state. The progress fill is
+6% opacity, the outline pulses between 24–32%, and the smaller center icon is
+40%. Reviewed 1080p captures include each survivor directly over the beacon.
+Both outer-edge beacons remain visible and revive the correct build.
