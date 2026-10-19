@@ -23,7 +23,8 @@ budget 1–2.5, XP 0.25–1.5. Keep a copy of your chosen profile when updating.
 The arena grows around its existing center. Native camera/view publication also
 updates wrapping, edge placement and despawn bounds. Boss/gear zoom changes still
 work; scaling is applied to fresh camera output without multiplying the game's
-zoom state repeatedly. The arena stays expanded if a partner dies.
+zoom state repeatedly. The view eases back to the single-ship size while one partner is down, then
+expands again after revival.
 
 Hostile AI chooses between living, visible ships using distance across wrap
 edges and a switching margin to avoid rapid oscillation. Native targeting then

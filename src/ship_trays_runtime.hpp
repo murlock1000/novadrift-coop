@@ -5,7 +5,7 @@ constexpr const char* Lists[]={"mods","gear","playerMods","gearShields","gearBod
 constexpr const char* Counts[]={"modCount","wildModCount","bodyCount","weaponCount","shieldCount","choiceCount"};
 struct Card { RValue object;std::string title,description;int native_index=0,sprite=-1;double icon_scale=1,measure_width=-1,measure_height=0;int measure_font=-2; };
 struct Tray {
- bool open=false,requested=false,inspect=false;unsigned long long epoch=0;double revision=-1;int selected=0;
+ bool open=false,requested=false,inspect=false;unsigned long long epoch=0,hint_until=0;double revision=-1;int selected=0;
  std::array<std::vector<RValue>,11> lists;std::array<RValue,6> counts;std::vector<Card> cards;
 };
 bool consume_confirm[3]{};
@@ -23,10 +23,11 @@ void Put(void* self,const char* name,const RValue& v){Builtin("variable_instance
 bool Busy(){return transaction!=0;}
 bool IsOpen(int owner){return owner>=1&&owner<=2&&trays[owner].open;}
 void Reset(){for(auto& tray:trays)tray=Tray{};consume_confirm[1]=consume_confirm[2]=false;}
-bool Eligible(int owner){
- if(!ready||!globals||owner<1||owner>2||!HasShip(owner))return false;
+bool CombatStage(int owner){
+ if(!ready||!globals||owner<1||owner>2||!Resolve(powers[owner]))return false;
  ndship::OwnerScope scope(owner);return Global(0x1af8938)>=4;
 }
+bool Eligible(int owner){return CombatStage(owner)&&HasShip(owner);}
 void Request(int owner){if(owner>=1&&owner<=2)trays[owner].requested=true;}
 double Revision(int owner){auto p=Resolve(powers[owner]);return Global(0x1af8938)*10000000+Builtin("ds_list_size",{Field(p,0x1af7678)}).ToDouble()*10000+Read(p,0x1af96c8,0)*100+Read(p,0x1af7f88,0);}
 void Capture(void* self,const char* name){
@@ -72,7 +73,7 @@ struct NativeState {
 };
 bool Generate(int owner){
  ndship::OwnerScope scope(owner);NativeState state(owner);
- Tray next;next.epoch=generation;next.open=true;
+ Tray next;next.epoch=generation;next.open=true;next.hint_until=GetTickCount64()+2500;
  {Transaction tx(owner,1);auto broker=tx.Make();if(!broker){++failed;return false;}
   for(size_t i=0;i<std::size(Lists);++i){auto list=Get(broker,Lists[i]);int size=Builtin("ds_list_size",{list}).ToInt32();if(size<0||size>2048){++failed;return false;}
    for(int k=0;k<size;++k)next.lists[i].push_back(Builtin("ds_list_find_value",{list,RValue(k)}));
@@ -134,6 +135,7 @@ void Toggle(int owner){
  ndship::OwnerScope scope(owner);
  if(tray.epoch==generation&&!tray.cards.empty()&&tray.revision==Revision(owner))tray.open=true;
  else Generate(owner);
+ tray.hint_until=GetTickCount64()+2500;
 }
 // Edges are sampled once on the shared Controller step. Engine keyboard state
 // includes Steam Remote Play input; XInput uses the configured guest slot.
@@ -159,11 +161,11 @@ void Tick(){
  double width=Builtin("display_get_gui_width").ToDouble(),height=Builtin("display_get_gui_height").ToDouble();
  double mx=Builtin("device_mouse_x_to_gui",{RValue(0)}).ToDouble(),my=Builtin("device_mouse_y_to_gui",{RValue(0)}).ToDouble();
  for(int owner=1;owner<=2;++owner){
-  auto& tray=trays[owner];bool opening=tray.requested||(pressed&(owner==1?1:2));tray.requested=false;
+  auto& tray=trays[owner];const bool requested=tray.requested;bool opening=requested||(pressed&(owner==1?1:2));tray.requested=false;
   if(qa_mode&&command.tray==owner){command.tray=0;opening=true;}
   bool chip=owner==1&&mx<width*.24&&my>height-110*height/1350&&my<height-60*height/1350;
   if(chip&&(pressed&256))opening=true;
-  if(opening){Toggle(owner);continue;}
+  if(opening){if(!requested||!tray.open)Toggle(owner);continue;}
   if(!tray.open)continue;
   tray.inspect=false;
   if(owner==1){
@@ -210,24 +212,27 @@ void Draw(void* self,double width,double height){
  for(int owner=1;owner<=2;++owner){
   if(!Eligible(owner)||Budget(owner)<=0)continue;
   int accent=ndship::hud::PlayerColor(owner);double chipx=owner==1?40*scale:width-600*scale;
-  p.FittedText(chipx,height-100*scale,"+ "+std::to_string((int)Budget(owner))+"  "+(owner==1?"Mouse middle":Binding(ndship::config::Action::Upgrade)),accent,text_scale,520*scale);
-  auto& tray=trays[owner];if(!tray.open||tray.cards.empty())continue;
+  auto& tray=trays[owner];
+  if(!tray.open)p.FittedText(chipx,height-100*scale,"+ "+std::to_string((int)Budget(owner))+"  "+(owner==1?"Mouse middle":Binding(ndship::config::Action::Upgrade)),accent,text_scale,520*scale);if(!tray.open||tray.cards.empty())continue;
   auto g=Layout(owner,width,height);
   for(int index=g.first;index<std::min((int)tray.cards.size(),g.first+5);++index){double x=g.x+50*scale+(index-g.first)*g.row;
    Sprite(p,tray.cards[index].sprite,x,g.y,68*scale,0xffffff);
    if(index==tray.selected){int frame=Art("sSelectaWhite");auto a=Size(tray.cards[index].sprite),b=Size(frame);Sprite(p,frame,x,g.y,136*scale*std::max(b.w,b.h)/std::max(a.w,a.h),accent,.85);}
   }
   auto& card=tray.cards[tray.selected];
-  p.FittedText(g.x,g.y+48*scale,card.title+"  "+std::to_string(tray.selected+1)+"/"+std::to_string(tray.cards.size()),accent,text_scale*.85,g.w);
+  p.FittedText(g.x,g.y+48*scale,card.title,accent,text_scale*.85,g.w);
   const auto rerolls=std::to_string((int)Read(Resolve(powers[owner]),0x1afa278,0));bool researcher=Read(Resolve(powers[owner]),0x1af96c8,0)==8;
   if(owner==1){
-   p.FittedText(g.x,g.y+84*scale,"Scroll / hover",accent,text_scale*.65,g.w*.4);
+   double hint=HintOpacity(tray.hint_until,GetTickCount64());
+   if(hint>0)p.FittedText(g.x,g.y+84*scale,"Scroll / hover",accent,text_scale*.65,g.w*.4,0,hint);
    p.FittedText(g.x+g.w*.45,g.y+84*scale,"Reroll "+rerolls,accent,text_scale*.65,g.w*.24);
    if(researcher)p.FittedText(g.x+g.w*.75,g.y+84*scale,"Banish",accent,text_scale*.65,g.w*.25);
   }else{
-   std::string footer=Binding(ndship::config::Action::Fire)+" choose | "+Binding(ndship::config::Action::Formation)+" inspect | "+Binding(ndship::config::Action::Deploy)+" reroll "+rerolls;
+   std::string footer=Binding(ndship::config::Action::Deploy)+" reroll "+rerolls;
    if(researcher)footer+=" | "+Binding(ndship::config::Action::Construct2)+" banish";
-   p.FittedText(g.x,g.y+84*scale,footer,accent,text_scale*.65,g.w);
+   p.FittedText(g.x+g.w*.45,g.y+84*scale,footer,accent,text_scale*.65,g.w*.55);
+   double hint=HintOpacity(tray.hint_until,GetTickCount64());
+   if(hint>0)p.FittedText(g.x,g.y+84*scale,Binding(ndship::config::Action::Fire)+" choose / "+Binding(ndship::config::Action::Formation)+" inspect",accent,text_scale*.65,g.w*.43,0,hint);
   }
   if(tray.inspect){
    ndship::OwnerScope scope(owner);double sx=text_scale*.85,available=g.w-80*scale;
@@ -252,8 +257,8 @@ void Trace(int counter){
   for(size_t i=0;i<tray.cards.size();++i)std::fprintf(CoopBalance::trace,"%s%d",i?",":"",(int)tray.cards[i].object.m_i64);
   std::fprintf(CoopBalance::trace,"],\"leaked_lists\":%llu,\"body\":%.0f,\"weapon\":%d,\"mod_count\":%d,\"acquired\":[",leaked_lists,Read(Resolve(powers[owner]),0x1af96c8), (int)Field(Resolve(powers[owner]),0x1af7898).m_i64,Builtin("ds_list_size",{Field(Resolve(powers[owner]),0x1af7678)}).ToInt32());
   auto mods=Field(Resolve(powers[owner]),0x1af7678);int n=Builtin("ds_list_size",{mods}).ToInt32();for(int i=0;i<n;++i){auto v=Builtin("ds_list_find_value",{mods,RValue(i)});std::fprintf(CoopBalance::trace,"%s%d",i?",":"",v.m_Kind==VALUE_REF?(int)v.m_i64:v.ToInt32());}
-  int helpers=0;for(int id:OwnedIds(owner)){int asset=Asset(Resolve(id));if(asset==537||asset==538)++helpers;}
-  std::fprintf(CoopBalance::trace,"],\"shield_type\":%.0f,\"helix_helpers\":%d,\"bans\":[",Read(Resolve(powers[owner]),0x1af7f88),helpers);
+  int helpers=0,caustic=0;for(int id:OwnedIds(owner)){int asset=Asset(Resolve(id));if(asset==537||asset==538)++helpers;if(asset==327)++caustic;}
+  std::fprintf(CoopBalance::trace,"],\"shield_type\":%.0f,\"helix_helpers\":%d,\"caustic_helpers\":%d,\"bans\":[",Read(Resolve(powers[owner]),0x1af7f88),helpers,caustic);
   auto bans=Field(Resolve(powers[owner]),0x1af7648);n=Builtin("ds_list_size",{bans}).ToInt32();for(int i=0;i<n;++i){auto v=Builtin("ds_list_find_value",{bans,RValue(i)});std::fprintf(CoopBalance::trace,"%s%d",i?",":"",v.m_Kind==VALUE_REF?(int)v.m_i64:v.ToInt32());}
   auto enemy=Builtin("instance_find",{RValue(246),RValue(0)});auto e=Resolve((int)enemy.m_i64);
   std::fprintf(CoopBalance::trace,"],\"enemy\":%d,\"enemy_x\":%.8f,\"enemy_y\":%.8f}\n",Id(e),Read(e,nd::Fields::X,0),Read(e,nd::Fields::Y,0));

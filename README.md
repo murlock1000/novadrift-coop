@@ -1,144 +1,69 @@
 # Nova Drift Co-op
 
-Experimental two-ship co-op for **Nova Drift 1.2.38.4**, Steam build **25890040**,
-Windows x64 (GameMaker YYC). Both ships share the arena and XP. Each keeps its
-own weapon, body, shield, augments, rerolls and upgrade choices. Each level gives
-each player a choice they can bank and use during combat. Both personal upgrade
-trays can be open at once; the teammate keeps playing.
+**Two pilots. One arena. Two completely different builds.**
 
-This repository contains the mod's source and tools. Bring your own matching
-Steam installation; game files, saves, dependencies and compiled binaries are
-excluded from Git.
+Turn Nova Drift into a shared-screen co-op run. Fight together, grow stronger
+with shared XP, and shape your own ship with separate weapons, shields, bodies
+and augments. Play side by side, or bring a friend through Steam Remote Play Together.
 
-## Launch an installed copy
+![Two ships sharing the arena, with separate red and gold HUDs](docs/screenshots/co-op-gameplay.png)
 
-Open `%USERPROFILE%\Games\NovaDriftCoop\PlayCoop.cmd` for local play, or
-`PlayRemoteCoop.cmd` for Steam Remote Play Together. Start a **fresh run**;
-two-player save/resume is unsupported. The original Steam installation and
-original save profile stay separate.
+## Built for two
 
-Normal launches request the game's native fullscreen mode. For a local window,
-run `PlayCoop.cmd windowed`. `PlayCoop.cmd diagnostics` enables diagnostic logging.
-The project's root shortcuts use the installed copy, with an optional
-`NOVACOOP_INSTALL` override; installation-specific paths stay in ignored `local/`.
+- **Your own ship, your own build.** Each player gets independent upgrades and rerolls.
+- **Keep the fight going.** Bank upgrade choices and spend them when you're ready.
+- **More room, more enemies.** A larger arena and increased regular enemy groups, with enemies targeting both pilots.
+- **Bring your teammate back.** Stay near their beacon to revive them without losing their build.
+- **A familiar look.** Native HUDs, upgrade artwork and descriptions, with red and gold accents to tell the ships apart.
 
-The Steam entry is **Spacewar (480)**. Nova Drift's own Steam entry does not
-advertise Remote Play Together. Your friends will see Spacewar while this
-experimental wrapper hosts Nova Drift. See [Steam setup](README.RemotePlay.md)
-for installation, invitations and restoring the original Launch Options.
+## Choose upgrades together
 
-## Co-op balance
+Small upgrade strips sit beside each player's HUD, leaving the arena visible.
+Both players can browse at once, or one can keep fighting while the other chooses.
+Hover a hex or hold Inspect to reveal its [full description](docs/screenshots/upgrade-inspect.png). Combat stays live.
 
-The default preset adds **44% more arena area**, lets hostile AI choose either
-living ship, and increases supported regular enemy groups by roughly **60%**.
-Ordinary pickup XP is **70%** of native value while both ships live; XP-earned
-levels still give each player a separate choice. Trait bonus levels stay with
-their buyer. Native boss order and wave timers are preserved.
+![Both players browsing compact native upgrade strips](docs/screenshots/compact-upgrades.png)
 
-Edit `runtime\coop-balance.ini` and restart to tune the preset. See
-[balance details and coverage](docs/BALANCE.md).
+## Cover each other
 
-## Reviving and zoom
+A fallen pilot leaves a beacon. After a short delay, stay close for three seconds
+to bring them back with their build intact. The view smoothly adjusts as ships
+join, fall and return. If both pilots go down, the run ends.
 
-The arena eases between the single-ship and two-ship view over 0.85 seconds.
-A downed ship leaves a beacon in its color. After five gameplay seconds, stay
-within 145 world units for three seconds to revive it. Progress fades when the
-teammate moves away and freezes during pause. The revived ship keeps its build,
-returns with half its effective hull and an empty shield, and receives the
-native 180-tick protection timer. Both ships dying ends the run normally.
-F8 can join P2 before automatic joining; it no longer gives a free redeploy.
+![A gold revive beacon marking a fallen teammate](docs/screenshots/beacon-revival.png)
 
-## Controls
+## Install and play
 
-**P1, red:** mouse aims; left button thrusts; right button fires. These are the
-copied game's mouse bindings. **P2, gold:** keyboard controls below. Directional
-steering turns toward the pressed direction and retains native momentum.
+Requires **Nova Drift 1.2.38.4 on Steam, Windows x64**. This is an experimental,
+source-only mod; the game and compiled mod files are not included.
 
-| P2 action | Default |
-|---|---|
-| Up / left / down / right | I / J / K / L |
-| Fire / confirm upgrade | N |
-| Stabilize / back in upgrade menu | Right Shift |
-| Blink | Right Ctrl |
-| Deploy selected construct / reroll upgrade | U |
-| Formation | O |
-| Construct slots 1–5 | 7 / 8 / 9 / 0 / minus |
-| Banish upgrade | 8 |
-| Strafe left / right | Semicolon / apostrophe |
-| Strafe forward / back | Left / right bracket |
-| Strafe modifier | Right Alt |
-| Open / close personal upgrades | F7 (controller: Back) |
-| Configure P2 | F6 |
+1. Follow the [installation guide](docs/INSTALLATION.md) to build and set up your co-op copy.
+2. Open `PlayCoop.cmd` in `%USERPROFILE%\Games\NovaDriftCoop`.
+3. Start a **fresh run**. The second ship joins automatically.
 
-F6 pauses play and opens the control editor. `ConfigureP2.cmd` opens it separately.
-Choose directional/tank steering, rebind keys or configure controller mappings.
-Settings live in `runtime\p2-controls.ini`. P2 keyboard bindings take priority
-over conflicting P1 keyboard alternatives; P1's mouse remains available.
-Physical controller hardware has not been tested.
+For online play, follow the [Steam Remote Play setup](README.RemotePlay.md), then
+open `PlayRemoteCoop.cmd` and invite your friend. Steam shows the session as **Spacewar**.
 
-Both HUDs use native health, shield and status rendering with red/gold accents.
-Control hints fade; no numeric health or defense values are added. Upgrades use
-native offers and artwork in small red/gold hex strips beside the HUD. Initial weapon,
-shield and body selection still uses the native screen. During combat, P1 uses
-middle mouse to open/close a strip, the wheel to browse and left click to choose.
-Hover a hex to inspect its full native description.
-P2 uses F7, movement keys to browse and N to choose; hold O (the configurable
-Formation binding) to inspect, and use Right Shift to close. Native description
-backgrounds, selection frames, icons, fonts and formatted stats are reused.
-Full descriptions stay hidden until hover or Inspect.
-Each tray has reroll and Researcher banish controls. Closing preserves offers
-and does not spend a choice or reroll. Choosing consumes only that ship's input;
-the other ship keeps moving and fighting. Neither player gains immunity while
-choosing. Escape remains a shared pause.
+Your original Steam installation and saves stay separate from the co-op copy.
 
-## Build and install from source
+## Pick your controls
 
-The current build workflow runs from **WSL on Windows**, with Windows interop:
+| | Player 1 · red | Player 2 · gold |
+|---|---|---|
+| Move | Mouse aim + left button thrust | I / J / K / L |
+| Fire | Right mouse button | N |
+| Open upgrades | Middle mouse button | F7 |
+| Inspect an upgrade | Hover its hex | Hold O |
+| Choose an upgrade | Left click | N |
 
-- Python 3.8+ and Git in WSL.
-- MSYS2 UCRT64 `g++.exe` at `C:\msys64\ucrt64\bin\g++.exe`.
-- Visual Studio 2022 Build Tools, x64 C++ tools, Windows SDK and C++ runtime,
-  installed at the default BuildTools path used by `tools/build_ship.cmd`.
-- Your supported, pristine Steam copy of Nova Drift. Other game builds are rejected.
+Press **F6** to configure P2. **Escape** pauses the game for both players.
+See [all controls](docs/CONTROLS.md) for rerolls, constructs and controller mappings.
 
-Clone this private repository, then from its WSL directory run:
+Initial weapon, shield and body choices use the original selection screen.
+Two-player save/resume is not supported. See [tested features and known limits](docs/VALIDATION.md).
 
-```sh
-python3 tools/setup_project.py \
-  --game-dir '/mnt/g/SteamLibrary/steamapps/common/Nova Drift'
-```
+---
 
-Adjust the path to your Steam library. This copies the game into ignored `game/`,
-records a private original-save baseline, fetches ten hash-pinned upstream files,
-builds the mod/launchers and stages an owned Windows-local installation. It does
-not install toolchains or change Steam settings. `--base /mnt/c/path/to/new-folder`
-selects another destination; existing folders require the ownership marker.
-Close the co-op game and helper before running setup or staging an update.
-
-The isolated profile initially copies your native preferences. Co-op run writes
-are suppressed because the original continuation format stores one player.
-The launcher redirects profile paths and blocks game Steam API initialization;
-Steam's outer launch chain supplies overlay and Remote Play.
-
-For individual rebuild/staging commands and verification see
-[development](docs/DEVELOPMENT.md). Dependency pins and upstream licensing are
-listed in [dependencies.json](dependencies.json) and
-[third-party notes](docs/THIRD_PARTY.md).
-
-## Limits and troubleshooting
-
-This is shared-screen co-op streamed through Steam, with one authoritative game
-process. Late-joining P2 starts from P1's build and then develops independently.
-Every late-game augment combination has not been tested. Remote Play merges
-keyboard input, so grant the guest keyboard access and leave guest mouse off.
-Keep the game focused while playing.
-
-If `SteamCoop.exe` is missing, the Steam shortcut reports it. Defender has
-previously quarantined this experimental helper; another deletion can block
-launching. The project does not change Windows Security settings. The relevant
-source is [src/steam_coop.cpp](src/steam_coop.cpp); build and review it locally.
-Local `PlayCoop.cmd` uses `novacoop_launch.exe` directly.
-
-For tested behavior and remaining gaps see [validation](docs/VALIDATION.md).
-The earlier ally experiment is retained in source for research; the supported
-launch path described here is the two-native-ship version.
+[Installation](docs/INSTALLATION.md) · [Steam Remote Play](README.RemotePlay.md) ·
+[Controls](docs/CONTROLS.md) · [Balance](docs/BALANCE.md) ·
+[Development](docs/DEVELOPMENT.md) · [Third-party notices](docs/THIRD_PARTY.md)

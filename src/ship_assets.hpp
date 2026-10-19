@@ -7,7 +7,7 @@
 #include "ship_context.hpp"
 namespace ndship::assets {
 struct Asset { int index; const char* name; };
-inline constexpr std::array<Asset,319> Owned{{
+inline constexpr std::array<Asset,320> Owned{{
     {1,"gAmp"},
     {2,"gArchitect"},
     {3,"gAssault"},
@@ -198,6 +198,7 @@ inline constexpr std::array<Asset,319> Owned{{
     {319,"oBurstThrustFirefly"},
     {320,"oCalibrate"},
     {321,"oCalibrateCenter"},
+    {327,"oCausticBarrier"},
     {338,"oCelestialSurge"},
     {341,"oChain"},
     {342,"oChainBack"},
@@ -328,7 +329,7 @@ inline constexpr std::array<Asset,319> Owned{{
     {860,"oWarpTargetController"},
     {863,"oWeaponNone"},
 }};
-inline constexpr std::array<Asset,138> ContextEffects{{
+inline constexpr std::array<Asset,137> ContextEffects{{
     {242,"oArcTail"},
     {278,"oBoltThrowerShotCharge"},
     {279,"oBoltThrowerShotChargeMega"},
@@ -353,7 +354,6 @@ inline constexpr std::array<Asset,138> ContextEffects{{
     {317,"oBurstThrust"},
     {324,"oCargoTrailL"},
     {325,"oCargoTrailR"},
-    {327,"oCausticBarrier"},
     {332,"oCelestialBurstWarning"},
     {334,"oCelestialEffect"},
     {347,"oColBlue"},

@@ -109,6 +109,13 @@ inline native::RValue* GotoHook(native::Instance* self,native::Instance* other,
 inline native::RValue* GotoDeferredHook(native::Instance* self,native::Instance* other,
                                        native::RValue* out,int argc,native::RValue** args) {
     const int owner=EffectiveOwner();
+    // A deferred native request may have been queued before a join/stage
+    // change. Guard the destructive entry itself, including downed owners.
+    if(callbacks.Banked&&callbacks.Banked(owner)) {
+        if(callbacks.OpenTray)callbacks.OpenTray(owner);
+        session_owner=0;close_completed=false;opening_failed=false;
+        LogOwner("deferred combat request redirected",owner);return False(out);
+    }
     session_owner=owner;close_completed=false;
     ndship::OwnerScope scope(owner);LogOwner("opening",owner);
     auto* result=original_goto_deferred(self,other,out,argc,args);

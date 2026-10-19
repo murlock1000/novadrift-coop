@@ -17,8 +17,15 @@ process=None;pid=None;counter=0;config_before=None
 before=fingerprint(ORIGINAL_SAVES)
 def control(**changes):
  global counter
- counter+=1;c=dict(counter=counter,qa_focus=1,mutate=0,rescue_mode=int('--polish' in sys.argv),mutate_hud=int(ui_mutation),mutate_sharing=int(sharing_mutation));c.update(changes)
- temp=runtime/'ship-control.pending';temp.write_text(''.join(f'{k}={v}\n' for k,v in c.items()));os.replace(temp,runtime/'ship-control.txt');return counter
+ counter+=1;c=dict(counter=counter,qa_focus=1,mutate=0,rescue_mode=int('--polish' in sys.argv),mutate_hud=int(ui_mutation),mutate_sharing=int(sharing_mutation),mutate_beacon=0);c.update(changes)
+ temp=runtime/'ship-control.pending';temp.write_text(''.join(f'{k}={v}\n' for k,v in c.items()))
+ # The native reader can briefly hold a Windows handle without delete sharing.
+ for attempt in range(80):
+  try:os.replace(temp,runtime/'ship-control.txt');break
+  except PermissionError:
+   if attempt==79:raise
+   time.sleep(.025)
+ return counter
 def rows(metrics=False):return [r for r in read_jsonl(runtime/'ship-telemetry.jsonl') if bool(r.get('metrics'))==metrics]
 def check(name,condition,details):
  report['checks'].append(dict(name=name,pass_=bool(condition),details=details));print(('PASS ' if condition else 'FAIL ')+name+': '+str(details),flush=True)
@@ -81,7 +88,7 @@ try:
   check('P1 banked ordinary choice does not block P2 starter choices',owned(1)['budget']==owned(2)['budget']==1 and owned(1)['stage']>=4 and owned(2)['stage']>=4,{'first':owned(1),'second':owned(2)})
   ui('close');process.wait(timeout=20);check('clean owned banked-starter shutdown',process.returncode==0,process.returncode)
   report['status']='PASS';raise SystemExit(0)
- if '--trays' in sys.argv:
+ if '--trays' in sys.argv or '--overlays' in sys.argv:
   def trayrows():return [r for r in read_jsonl(runtime/'ship-balance.jsonl') if r.get('kind')=='tray']
   def tray(owner):return next((r for r in reversed(trayrows()) if r['owner']==owner),None)
   # Preserve and exercise all three native starter stages for each build.
@@ -95,6 +102,9 @@ try:
    check('native starter stage preserved for both ships',tray(1)['stage']==tray(2)['stage']==stage+1,{'first':tray(1),'second':tray(2)})
   control(augment=8,owner=2);wait(lambda:tray(2)['weapon']==269)
   control(level=3);wait(lambda:tray(1)['budget']>=3 and tray(2)['budget']>=3)
+  if '--overlays' in sys.argv:
+   from qa_overlay_checks import run
+   run(globals());report['status']='PASS';raise SystemExit(0)
   c=control(tray=1,tray_enemy=1);wait(lambda:tray(1)['open']==1)
   c=control(engine_input=1,engine_key=0x76);wait(lambda:tray(2)['open']==1)
   control(engine_input=1)

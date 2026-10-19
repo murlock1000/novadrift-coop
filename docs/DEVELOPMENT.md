@@ -1,7 +1,7 @@
 # Development
 
-Run tools from WSL with native Windows interop. See the root README for the exact
-supported game build and toolchains. Setup verifies the pristine executable SHA:
+Run tools from WSL with native Windows interop. See [installation](INSTALLATION.md)
+for the exact supported game build and toolchains. Setup verifies the pristine executable SHA:
 `6555f9f49c9b44f2a38dafc0846dd8af0e7e1f1e100cba976db60967b7173e2d`.
 
 ```sh
@@ -71,6 +71,7 @@ python3 tools/qa_ships.py
 python3 tools/qa_ships.py --presentation-controls
 python3 tools/qa_ships.py --polish
 python3 tools/qa_ships.py --trays
+python3 tools/qa_ships.py --overlays
 python3 tools/qa_ships.py --starter-bank
 python3 tools/qa_launcher.py
 python3 tools/qa_launcher.py --remote-wrapper
@@ -95,3 +96,9 @@ locations and SHA-256 pins belong in `dependencies.json`.
 
 The balance integration suite is `python3 tools/qa_ships.py --balance`; use a
 separate owned QA installation as described in [BALANCE.md](BALANCE.md).
+
+`--overlays` uses Pillow and a foreground Windows game client to check actual
+owner-colored beacon pixels, native upgrade-key/deferred requests for living
+and downed ships, both compact strips, Inspect, and shared pause. It captures
+only the verified game's client area. `--overlays --mutation-beacon` deliberately
+hides the beacon and must fail the pixel assertion.

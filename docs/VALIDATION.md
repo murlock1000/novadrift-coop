@@ -86,7 +86,7 @@ aggregate both builds' rarity modifiers. See [balance coverage](BALANCE.md).
 
 ## Combat trays and revival (October 2026)
 
-The installed polish build passed **101 native integration checks** across the
+The first polish build passed **101 native integration checks** across the
 37-check regression, 18-check revival/zoom suite, 15-check balance suite,
 26-check compact-tray suite and five-check banked-starter handoff suite. All
 five runs used the same DLL and left original saves unchanged.
@@ -120,3 +120,30 @@ all late-game trait combinations, controller hardware, or remote friend setups.
 never blocks P2 from completing the three native starter choices.
 QA keeps automatic revival disabled in legacy death fixtures; `--polish`
 explicitly enables it. Normal play always uses the teammate-beacon mechanic.
+
+## Menu and overlay follow-up (2026-10-19)
+
+The final rendering build passed the 20-check overlay suite and 37-check native
+regression suite. The preceding build, before the final draw-order adjustment,
+also passed 26 compact-tray, 18 revival and five starter-handoff checks. A deliberate
+hidden-beacon mutation failed the client-pixel assertion as expected.
+
+The overlay suite checks native upgrade-key and direct deferred requests during
+combat, including either downed owner. These remain outside the full-screen
+native shop; the three starter equipment stages and shared pause stay available.
+It captures the verified foreground game client and checks owner-colored pixels
+around both revive-range rings, then revives each pilot with unchanged build IDs
+and run generation. Both Viper body helpers are created natively; each death
+removes only its owner's helper, and native refresh recreates it on revival.
+
+Reviewed 1920×1080 client captures cover simultaneous strips, native Inspect
+text, settled hints, shared pause and both downed states. Card position counters,
+duplicate open-key labels, persistent navigation instructions and obsolete
+single-player upgrade/tutorial banners are removed or faded. Exact localized
+message matching preserves other native messages. This is bounded visual review,
+not proof for every resolution, language or long-description combination.
+
+The proximity fixture pins and replenishes the survivor to avoid unrelated
+ambient combat ending the test. Native collision protection probes clear that
+fixture before measuring actual damage. Normal play does not replenish hull
+while reviving.

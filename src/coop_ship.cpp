@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <map>
 #include <YYToolkit/YYTK_Shared.hpp>
 #include "native_abi.hpp"
@@ -35,6 +36,9 @@ YYTKInterface* api=nullptr; AurieModule* module_self=nullptr; nd::Access access{
 TRoutine engine_keyboard_check=nullptr;
 std::filesystem::path root; FILE* log_file=nullptr; FILE* telemetry=nullptr; FILE* performance=nullptr; FILE* presentation=nullptr;
 unsigned long long marker_draws[3]{},native_rect_hidden=0,hud_frames=0;
+std::unordered_set<int> hidden_tutorial_effects;
+int obsolete_tutorial_scope=0;
+bool ObsoleteAdvice(void*);
 std::string gameplay_help=ndship::config::Help(ndship::config::Profile{}),menu_help=ndship::config::Help(ndship::config::Profile{},true);
 ULONGLONG performance_at=0;
 int ships[3]{-1,-1,-1}, powers[3]{-1,-1,-1};
@@ -60,10 +64,10 @@ std::atomic<unsigned long long> input_frame{0};
 bool p2_ui_valid=false,ui_overlay_active=false,save_native_ui=false;
 ULONGLONG hint_until[3]{},upgrade_hint_until=0;
 int upgrade_hint_owner=0,ui_primary=1;bool upgrade_was_open=false;
-void ResetNativeUI(){p2_ui_valid=false;ui_primary=1;hint_until[1]=hint_until[2]=upgrade_hint_until=0;upgrade_was_open=false;upgrade_hint_owner=0;}
+void ResetNativeUI(){hidden_tutorial_effects.clear();p2_ui_valid=false;ui_primary=1;hint_until[1]=hint_until[2]=upgrade_hint_until=0;upgrade_was_open=false;upgrade_hint_owner=0;}
 double HintOpacity(ULONGLONG until,ULONGLONG now){return until>now?std::min(1.0,(until-now)/1000.0):0.0;}
 std::string last_commands;
-struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0; } command;
+struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0,deferred_upgrade=0,mutate_beacon=0; } command;
 void Log(const char* t){if(log_file){std::fprintf(log_file,"[%llu] %s\n",GetTickCount64(),t);std::fflush(log_file);}}
 bool Readable(std::uintptr_t p,std::size_t n){MEMORY_BASIC_INFORMATION m{};return p>=0x10000&&p<0x7fffffffffffULL&&n<0x10000&&VirtualQuery((void*)p,&m,sizeof m)&&m.State==MEM_COMMIT&&!(m.Protect&(PAGE_NOACCESS|PAGE_GUARD))&&p+n<=(std::uintptr_t)m.BaseAddress+m.RegionSize;}
 int Id(void* p){return p&&Readable((std::uintptr_t)p,0xc8)&&*(int*)((char*)p+0x7c)==1?*(int*)((char*)p+0xbc):-1;}
@@ -117,7 +121,7 @@ void CommandsRead(bool startup=false){
  Commands c;std::istringstream lines(text);std::string line;
  while(std::getline(lines,line)){std::replace(line.begin(),line.end(),'=',' ');std::istringstream e(line);std::string key;int value;if(!(e>>key>>value))continue;
  #define KEY(k) if(key==#k)c.k=value;
- KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy)
+ KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy) KEY(deferred_upgrade) KEY(mutate_beacon)
  #undef KEY
  }
  if(qa_mode&&api&&c.engine_key!=command.engine_key){
@@ -244,13 +248,20 @@ void CodeCallback(CodeEvent& event){
  int attention=0;
  if(name&&(std::strstr(name,"_Step_")||std::strstr(name,"_Alarm_")||std::strstr(name,"_Create_")))attention=CoopBalance::Select(self);
  ndship::OwnerScope scope(owner);
+ // Old starter tutorials may still be fading when combat begins. Hide only
+ // matched presentation instances, keeping their native Step/cleanup alive.
+ const bool obsolete_generic=self&&name&&std::strstr(name,"gml_Object_oTutorialGeneric")&&
+  (std::strstr(name,"_Step_")||std::strstr(name,"_Alarm_"))&&ObsoleteAdvice(self);
+ if(asset==571&&obsolete_tutorial_scope&&name&&std::strstr(name,"_Create_"))hidden_tutorial_effects.insert(self_id);
+ if(obsolete_generic)++obsolete_tutorial_scope;
  {ndship::TargetScope target(attention);event.Call();}
+ if(obsolete_generic){--obsolete_tutorial_scope;if(Resolve(self_id)==self){RValue hidden(false);api->SetBuiltin("visible",self,NULL_INDEX,hidden);}}
  if(asset==377&&name&&std::strstr(name,"_Step_0")){CoopFlow::Tick();Trays::Tick();}
  if(ready&&owner&&name){
   if(ndship::hud::IsShipVisualAsset(asset)&&std::strstr(name,"_Create_"))ndship::hud::TintShipVisual(api,self,owner);
 
  }
- if(name&&(std::strstr(name,"_Destroy_")||std::strstr(name,"_CleanUp_"))){owners.erase(self_id);ndship::UnregisterOwnedInstance(self);CoopBalance::targets.erase(self_id);}
+ if(name&&(std::strstr(name,"_Destroy_")||std::strstr(name,"_CleanUp_"))){hidden_tutorial_effects.erase(self_id);owners.erase(self_id);ndship::UnregisterOwnedInstance(self);CoopBalance::targets.erase(self_id);}
  if(qa_mode)Telemetry();
  if(ready&&!joining&&!Trays::Busy()&&!ndship::lifecycle::IsTearingDown()){
   if(qa_mode)Stimuli();
@@ -333,11 +344,15 @@ nd::RValue* SaveRun(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(ready){*(
 void Stimuli(){
  if(!command.qa_focus)return;
  if(CoopBalance::qa_probe_running)return;
- if(command.rescue_hold>=1&&command.rescue_hold<=2){const int down=command.rescue_hold;auto& r=CoopFlow::rescues[down];auto partner=Resolve(ships[3-down]);if(r.down&&partner){access.set(partner,nd::Fields::X,r.x);access.set(partner,nd::Fields::Y,r.y);access.set(partner,nd::Fields::HSpeed,0);access.set(partner,nd::Fields::VSpeed,0);}}
+ if(command.rescue_hold>=1&&command.rescue_hold<=2){const int down=command.rescue_hold;auto& r=CoopFlow::rescues[down];auto partner=Resolve(ships[3-down]);if(r.down&&partner){access.set(partner,nd::Fields::X,r.x);access.set(partner,nd::Fields::Y,r.y);access.set(partner,nd::Fields::HSpeed,0);access.set(partner,nd::Fields::VSpeed,0);
+  // The stationary proximity fixture must not lose its survivor to ambient
+  // combat. Real collision probes run with rescue_hold cleared, without this.
+  auto build=Resolve(powers[3-down]);if(build)access.set(build,nd::Fields::Hull,Read(build,0x1aeef08,100));}}
  if(command.collision){int owner=command.collision;command.collision=0;CoopFlow::ProbeCollision(owner,command.counter);return;}
  if(command.balance){int mode=command.balance;command.balance=0;CoopBalance::qa_probe_running=true;CoopBalance::Probe(mode,command.counter);CoopBalance::qa_probe_running=false;return;}
  if(command.restart){command.restart=0;if(Builtin("instance_number",{RValue(573)}).ToInt32()==0){Log("QA paused native restart object create");Builtin("instance_create_depth",{RValue(0.0),RValue(0.0),RValue(0.0),RValue(504)});}else Log("QA restart refused: enter native pause first");return;}
  if(command.upgrade){int owner=command.upgrade;command.upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x357de0,c);}}
+ if(command.deferred_upgrade){int owner=command.deferred_upgrade;command.deferred_upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x358560,c);}}
  if(command.damage){int owner=command.owner;auto b=Resolve(powers[owner]);if(b){access.set(b,nd::Fields::Hull,std::max(1.0,Read(b,nd::Fields::Hull,100)-command.damage));access.set(b,0x1af7fd8,std::max(0.0,Read(b,0x1af7fd8,0)-command.damage));}command.damage=0;}
  if(command.kill){int owner=command.kill;command.kill=0;auto b=Resolve(powers[owner]);if(b){access.set(b,0x1af7f98,0);access.set(b,nd::Fields::Hull,0);}}
  if(command.tray_enemy){command.tray_enemy=0;ndship::OwnerScope world(0);auto enemy=Builtin("instance_create_depth",{RValue(Global(0x1af7428)+100),RValue(Global(0x1af74a8)+100),RValue(0.0),RValue(252)});auto e=Resolve((int)enemy.m_i64);if(e){access.set(e,nd::Fields::HSpeed,1);access.set(e,nd::Fields::VSpeed,.5);}}
@@ -455,7 +470,47 @@ void HealthRectangle(float x1,float y1,float x2,float y2,bool outline){
  original_draw_rectangle(x1,y1,x2,y2,outline);
 }
 
-nd::Event original_draw_gui=nullptr;
+nd::Event original_draw_gui=nullptr,original_upgrade_prompt=nullptr;
+bool CompactPresentation(){return ready&&(Trays::CombatStage(1)||Trays::CombatStage(2));}
+void UpgradePrompt(void*s,void*o){if(!CompactPresentation())original_upgrade_prompt(s,o);}
+nd::Event original_upgrade_tutorial=nullptr,original_generic_tutorial=nullptr,original_generic_tutorial2=nullptr;
+void RememberTutorialEffects(void* self){
+ // TutorialUpgrade.effect is a child instance. Its graphic/pulseGraphic
+ // fields and the generic tutorial's graphic fields are sprite references.
+ auto value=Field(self,0x1af7c38);double numeric=0;
+ int id=value.m_Kind==VALUE_REF?(int)value.m_i64:ndship::build::Number(*(nd::RValue*)&value,numeric)?(int)numeric:-1;
+ if(id>=100000&&Asset(Resolve(id))==571)hidden_tutorial_effects.insert(id);
+}
+void UpgradeTutorial(void*s,void*o){if(CompactPresentation())RememberTutorialEffects(s);else original_upgrade_tutorial(s,o);}
+bool ObsoleteText(const RValue& text){
+ if(!CompactPresentation()||text.m_Kind!=VALUE_STRING)return false;
+ const std::string value=text.ToString();
+ // Compare localized native messages; leave encounter warnings and other
+ // generic tutorials intact. These are presentation-only DrawGUI hooks.
+ for(auto cell:{0x1b04818ULL,0x1b03f18ULL,0x1b03e58ULL,0x1b03f08ULL,0x1b03ef8ULL,0x1b01bb8ULL,0x1b01bd8ULL,0x1b01be8ULL,0x1a9bb28ULL,0x1a9bb98ULL,0x1a9bbb8ULL,0x1a9bbf8ULL,0x1a9bd08ULL,0x1a9bd18ULL,0x1a9cb08ULL,0x1a9d338ULL,0x1a9d558ULL,0x1a9d7a8ULL,0x1a9d818ULL,0x1b0a9d8ULL,0x1b0aaa8ULL,0x1b0aae8ULL,0x1b0ac18ULL}){
+  auto native=(RValue*)GlobalRead(globals,access.id(cell));if(native&&native->m_Kind==VALUE_STRING&&value==native->ToString())return true;
+ }
+ return false;
+}
+bool ObsoleteAdvice(void* self){return CompactPresentation()&&ObsoleteText(Field(self,0x1b01048));}
+void GenericTutorial(void*s,void*o){if(!ObsoleteAdvice(s))original_generic_tutorial(s,o);}
+void GenericTutorial2(void*s,void*o){if(!ObsoleteAdvice(s))original_generic_tutorial2(s,o);}
+nd::Script original_spawn_tutorial=nullptr;
+nd::RValue* SpawnTutorial(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
+ if(n>0&&a&&a[0]&&ObsoleteText(*(RValue*)a[0])){*(RValue*)r=RValue();return r;}
+ return original_spawn_tutorial(s,o,r,n,a);
+}
+nd::Event original_tutorial_effect=nullptr;
+void TutorialEffect(void*s,void*o){
+ if(CompactPresentation()){
+  if(!hidden_tutorial_effects.count(Id(s))){
+   int n=Builtin("instance_number",{RValue(823)}).ToInt32();
+   for(int i=0;i<n;++i){auto parent=Builtin("instance_find",{RValue(823),RValue(i)});if(auto tutorial=Resolve((int)parent.m_i64))RememberTutorialEffects(tutorial);}
+  }
+  if(hidden_tutorial_effects.count(Id(s)))return;
+ }
+ original_tutorial_effect(s,o);
+}
 void PerformanceLog(){
  if(!performance||GetTickCount64()-performance_at<1000)return;
  performance_at=GetTickCount64();
@@ -514,6 +569,18 @@ bool DrawNativeHud(void*s,void*o,int primary,double width,double height){
  }
  return native_hud_result.ok;
 }
+// World-space indicators use GUI projection, but stay below every HUD layer.
+void DrawWorldOverlays(void* self,double width,double height){
+ if(!ready)return;
+ CoopFlow::Draw(self,width,height);
+ double view_x=Global(0x1af7428),view_y=Global(0x1af74a8),view_w=Global(0x1af7468),view_h=Global(0x1af7418);
+ bool show_markers=!ndship::upgrade::SessionActive()&&Read(Resolve(controller_id),0x1b004b8,0)==0;
+ if(show_markers&&view_w>0&&view_h>0)for(int owner=1;owner<=2;++owner)if(auto ship=Resolve(ships[owner])){
+  double x=(Read(ship,nd::Fields::X)-view_x)*width/view_w,y=(Read(ship,nd::Fields::Y)-view_y)*height/view_h;
+  ndship::hud::TintShipVisual(api,(CInstance*)ship,owner);
+  ndship::hud::DrawMarker(api,owner,x,y,36*width/view_w,(CInstance*)self,Budget(owner)>0?0:HintOpacity(hint_until[owner],GetTickCount64()));++marker_draws[owner];
+ }
+}
 void DrawGUI(void*s,void*o){
  ndship::perf::MarkFrame();ReloadControls();OpenControlEditor();
  int primary=ready&&!HasShip(1)&&HasShip(2)?2:1;
@@ -526,25 +593,19 @@ void DrawGUI(void*s,void*o){
  double old_controls=0;bool hide_controls=ready&&globals&&original_global_read;
  if(hide_controls){old_controls=Global(0x1b002c8);SetGlobal(0x1b002c8,0);}
  double gui_width=Builtin("display_get_gui_width").ToDouble(),gui_height=Builtin("display_get_gui_height").ToDouble();
+ DrawWorldOverlays(s,gui_width,gui_height);
  bool native_ok=ready&&!command.nativehud&&DrawNativeHud(s,o,primary,gui_width,gui_height);
  if(!native_ok)original_draw_gui(s,o);
  if(hide_controls)SetGlobal(0x1b002c8,old_controls);
  input_frame.fetch_add(1,std::memory_order_relaxed);
  if(!ready)return;
- CoopFlow::Draw(s,gui_width,gui_height);Trays::Draw(s,gui_width,gui_height);
  ndship::perf::Span measure(ndship::perf::Metric::Hud);
  ndship::hud::State state;state.enabled=!command.nativehud;
  state.width=gui_width;state.height=gui_height;
  state.font=Builtin("draw_get_font").ToInt32();
  if(native_ok)for(int i=0;i<2;++i){auto rect=native_hud_result.dest[i+1];state.life_x[i]=rect.x;state.life_y[i]=rect.y;state.life_width[i]=rect.w;}
- auto now=GetTickCount64();for(int i=0;i<2;++i)state.hint_alpha[i]=HintOpacity(hint_until[i+1],now);state.controls_alpha=state.hint_alpha[1];
- double view_x=Global(0x1af7428),view_y=Global(0x1af74a8),view_w=Global(0x1af7468),view_h=Global(0x1af7418);
- bool show_markers=!ndship::upgrade::SessionActive()&&Read(Resolve(controller_id),0x1b004b8,0)==0;
- if(show_markers&&view_w>0&&view_h>0)for(int owner=1;owner<=2;++owner)if(auto ship=Resolve(ships[owner])){
-  double x=(Read(ship,nd::Fields::X)-view_x)*state.width/view_w,y=(Read(ship,nd::Fields::Y)-view_y)*state.height/view_h;
-  ndship::hud::TintShipVisual(api,(CInstance*)ship,owner);
-  ndship::hud::DrawMarker(api,owner,x,y,36*state.width/view_w,(CInstance*)s,state.hint_alpha[owner-1]);++marker_draws[owner];
- }
+ auto now=GetTickCount64();for(int i=0;i<2;++i)state.hint_alpha[i]=Budget(i+1)>0?0:HintOpacity(hint_until[i+1],now);state.controls_alpha=Budget(2)>0?0:state.hint_alpha[1];
+
  state.upgrade_menu=ndship::upgrade::SessionActive()&&CountUI()>0;state.upgrade_owner=ndship::upgrade::CurrentMenuOwner();
  if(state.upgrade_menu&&(!upgrade_was_open||upgrade_hint_owner!=state.upgrade_owner))upgrade_hint_until=now+2500;
  upgrade_was_open=state.upgrade_menu;upgrade_hint_owner=state.upgrade_owner;state.upgrade_hint_alpha=HintOpacity(upgrade_hint_until,now);
@@ -554,7 +615,8 @@ void DrawGUI(void*s,void*o){
  }
  state.menu_hint=state.upgrade_owner==2?menu_help:"P1: point at an upgrade and click to select";
  state.gameplay_hint=gameplay_help;
- ndship::hud::Draw(api,state,(CInstance*)s);++hud_frames;
+ ndship::hud::Draw(api,state,(CInstance*)s);
+ Trays::Draw(s,gui_width,gui_height);++hud_frames;
  if(presentation){static ULONGLONG at=0;auto now=GetTickCount64();if(now-at>=100){at=now;
   RValue color1(-1),color2(-1);if(auto ship=Resolve(ships[1]))api->GetBuiltin("image_blend",(CInstance*)ship,NULL_INDEX,color1);if(auto ship=Resolve(ships[2]))api->GetBuiltin("image_blend",(CInstance*)ship,NULL_INDEX,color2);
   std::fprintf(presentation,"{\"time\":%llu,\"command\":%d,\"hull1\":%.6f,\"hullmax1\":%.6f,\"shield1\":%.6f,\"shieldmax1\":%.6f,\"hull2\":%.6f,\"hullmax2\":%.6f,\"shield2\":%.6f,\"shieldmax2\":%.6f,\"color1\":%d,\"color2\":%d,\"marker1\":%llu,\"marker2\":%llu,\"native_rect_hidden\":%llu,\"hud_frames\":%llu,\"menu_owner\":%d,\"menu\":%d,\"fire_key\":%d,\"steering\":%d,\"key\":%d,\"engine_key\":%d,\"engine_input\":%d,\"p2_fire\":%d,\"hint1\":%.6f,\"hint2\":%.6f,\"upgrade_hint\":%.6f,\"native_hud\":%d,\"native_frames\":%llu,\"bar1\":%.6f,\"bar2\":%.6f,\"src1_x\":%.6f,\"src1_y\":%.6f,\"src1_w\":%.6f,\"src1_h\":%.6f,\"src2_x\":%.6f,\"src2_y\":%.6f,\"src2_w\":%.6f,\"src2_h\":%.6f,\"dst1_x\":%.6f,\"dst1_y\":%.6f,\"dst1_w\":%.6f,\"dst1_h\":%.6f,\"dst2_x\":%.6f,\"dst2_y\":%.6f,\"dst2_w\":%.6f,\"dst2_h\":%.6f}\n",
@@ -592,10 +654,14 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  if(!Hook("Balance.ChooseTarget",0xe7a60,(void*)CoopBalance::ChooseTarget,(void**)&CoopBalance::original_choose_target)||!Hook("Balance.UpdateScore",0x781240,(void*)CoopBalance::UpdateScore,(void**)&CoopBalance::original_update_score)||!Hook("Balance.ExpControl",0x2def70,(void*)CoopBalance::ExpControl,(void**)&CoopBalance::original_exp_control))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Balance.Curated",0x61b170,(void*)CoopBalance::Curated,(void**)&CoopBalance::original_curated)||!Hook("Balance.Dynamic",0x62df50,(void*)CoopBalance::Dynamic,(void**)&CoopBalance::original_dynamic)||!Hook("Balance.SpawnParser",0x647cd0,(void*)CoopBalance::SpawnParser,(void**)&CoopBalance::original_spawn_parser))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!ndship::lifecycle::InstallLifecycleHooks(module,access.base,{OwnedIds,Owner,Forget,DisposeList,BeginTeardown,EndTeardown,Log}))return AURIE_MODULE_INITIALIZATION_FAILED;
- if(!ndship::upgrade::Install(module,access.base,{Budget,Controller,CountUI,Log,Trays::Eligible,Trays::Request,SetBudget}))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!ndship::upgrade::Install(module,access.base,{Budget,Controller,CountUI,Log,Trays::CombatStage,Trays::Request,SetBudget}))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Trays::Install())return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.UIFlash",0x371ea0,(void*)UIFlash,(void**)&original_ui_flash)||!Hook("Ship.UIPositions",0x4483b0,(void*)UIPositions,(void**)&original_ui_positions)||!Hook("Ship.UIRefresh",0x4c79f0,(void*)UIRefresh,(void**)&original_ui_refresh))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.HealthRect",ndship::hud::NativeDrawRectangleRva,(void*)HealthRectangle,(void**)&original_draw_rectangle))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Ship.UpgradeTutorial",0xe60f70,(void*)UpgradeTutorial,(void**)&original_upgrade_tutorial)||!Hook("Ship.GenericTutorial",0xe5a940,(void*)GenericTutorial,(void**)&original_generic_tutorial)||!Hook("Ship.GenericTutorial2",0xe5bb10,(void*)GenericTutorial2,(void**)&original_generic_tutorial2))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Ship.SpawnTutorial",0x659ed0,(void*)SpawnTutorial,(void**)&original_spawn_tutorial))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Ship.TutorialEffect",0xbe2030,(void*)TutorialEffect,(void**)&original_tutorial_effect))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Ship.UpgradePrompt",0xc98890,(void*)UpgradePrompt,(void**)&original_upgrade_prompt))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.DrawGUI",0x984ec0,(void*)DrawGUI,(void**)&original_draw_gui))return AURIE_MODULE_INITIALIZATION_FAILED;
  TRoutine input_detours[]={InputBuiltin<0>,InputBuiltin<1>,InputBuiltin<2>,InputBuiltin<3>,InputBuiltin<4>,InputBuiltin<5>,InputBuiltin<6>,InputBuiltin<7>,InputBuiltin<8>,InputBuiltin<9>};
  for(int i=0;i<10;++i)if(!HookBuiltin(InputBuiltins[i],input_detours[i],original_input_builtin[i]))return AURIE_MODULE_INITIALIZATION_FAILED;

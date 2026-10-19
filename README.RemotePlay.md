@@ -10,7 +10,7 @@ Valve requires an eligible app for the invitation UI.
 ## Configure
 
 1. Sign into Steam. Install Spacewar using `steam://install/480` from Windows Run.
-2. Build/install the co-op copy using [README.md](README.md).
+2. Build/install the co-op copy using the [installation guide](docs/INSTALLATION.md).
 3. Open `ConfigureRemotePlay.cmd` in the installed co-op folder. Its **Copy launch
    option** button copies the complete option when clicked.
 4. In **Spacewar → Properties → General → Launch Options**, preserve the existing
