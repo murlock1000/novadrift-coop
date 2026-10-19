@@ -1,22 +1,20 @@
 # Nova Drift Co-op
 
-**Two pilots. One arena. Two completely different builds.**
-
-Turn Nova Drift into a shared-screen co-op run. Fight together, grow stronger
-with shared XP, and shape your own ship with separate weapons, shields, bodies
-and augments. Play side by side, or bring a friend through Steam Remote Play Together.
+A two-player co-op mod for Nova Drift. Each player controls their own ship and
+chooses their own upgrades. XP is shared. Supports local play and Steam Remote
+Play Together.
 
 ![Two ships sharing the arena, with separate red and gold HUDs](docs/screenshots/co-op-gameplay.png)
 
-## Built for two
+## Features
 
-- **Your own ship, your own build.** Each player gets independent upgrades and rerolls.
-- **Keep the fight going.** Bank upgrade choices and spend them when you're ready.
-- **More room, more enemies.** A larger arena and increased regular enemy groups, with enemies targeting both pilots.
-- **Bring your teammate back.** Stay near their beacon to revive them without losing their build.
-- **A familiar look.** Native HUDs, upgrade artwork and descriptions, with red and gold accents to tell the ships apart.
+- Separate weapons, shields, bodies, augments and rerolls for each player.
+- Upgrade choices can be saved for later and used during combat.
+- A larger arena, more enemies in regular waves, and enemies that target both players.
+- Revive a teammate at their beacon without resetting their build.
+- The game's HUDs, upgrade artwork and descriptions, with red and gold player colors.
 
-## Choose upgrades together
+## Upgrades
 
 Small upgrade strips sit beside each player's HUD, leaving the arena visible.
 Both players can browse at once, or one can keep fighting while the other chooses.
@@ -24,15 +22,15 @@ Hover a hex or hold Inspect to reveal its [full description](docs/screenshots/up
 
 ![Both players browsing compact native upgrade strips](docs/screenshots/compact-upgrades.png)
 
-## Cover each other
+## Revival
 
-A fallen pilot leaves a beacon. After a short delay, stay close for three seconds
-to bring them back with their build intact. The view smoothly adjusts as ships
-join, fall and return. If both pilots go down, the run ends.
+When a player dies, their ship leaves a beacon. After a short delay, the other
+player can stay near it for three seconds to revive them. Their build is preserved.
+The arena resizes as players join, die and revive. If both players die, the run ends.
 
 ![A gold revive beacon marking a fallen teammate](docs/screenshots/beacon-revival.png)
 
-## Install and play
+## Installation
 
 Requires **Nova Drift 1.2.38.4 on Steam, Windows x64**. This is an experimental,
 source-only mod; the game and compiled mod files are not included.
@@ -46,7 +44,7 @@ open `PlayRemoteCoop.cmd` and invite your friend. Steam shows the session as **S
 
 Your original Steam installation and saves stay separate from the co-op copy.
 
-## Pick your controls
+## Controls
 
 | | Player 1 · red | Player 2 · gold |
 |---|---|---|
