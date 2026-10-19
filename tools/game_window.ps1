@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][int]$TargetPid,
     [Parameter(Mandatory=$true)][string]$ExpectedSha256,
-    [ValidateSet('status','focus','press','close')][string]$Action='status',
+    [ValidateSet('status','focus','press','close','mouse')][string]$Action='status',
+    [ValidateSet('leftDown','leftUp','rightDown','rightUp')][string]$MouseEvent='leftUp',
     [string]$Keys='ENTER',
     [ValidateRange(10,5000)][int]$HoldMs=120,
     [ValidateRange(0,5000)][int]$DelayMs=200,
@@ -15,6 +16,13 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 public static class NovaWindow {
+ [StructLayout(LayoutKind.Sequential)] public struct MouseInput {public int dx,dy;public uint data,flags,time;public UIntPtr extra;}
+ [StructLayout(LayoutKind.Sequential)] public struct Input {public uint type;public MouseInput mouse;}
+ [DllImport("user32.dll")] static extern uint SendInput(uint count,Input[] inputs,int size);
+ public static void MouseButton(uint flags) {
+  var input=new Input();input.mouse.flags=flags;
+  if(SendInput(1,new[]{input},Marshal.SizeOf(typeof(Input)))!=1)throw new Exception("Owned mouse SendInput failed");
+ }
  public delegate bool EnumProc(IntPtr hwnd, IntPtr data);
  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc callback, IntPtr data);
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint process);
@@ -60,9 +68,10 @@ function OwnedProcess {
  return $process
 }
 $process=OwnedProcess
+$mouseInfo=$null
 $handles=@([NovaWindow]::Find([uint32]$TargetPid))
 $windows=@($handles | ForEach-Object { [ordered]@{handle=$_;title=[NovaWindow]::Title([IntPtr]$_);hung=[NovaWindow]::IsHungAppWindow([IntPtr]$_)} })
-if($Action -eq 'press' -or $Action -eq 'focus' -or $Action -eq 'close') {
+if($Action -eq 'press' -or $Action -eq 'focus' -or $Action -eq 'close' -or $Action -eq 'mouse') {
  if($handles.Count -eq 0) {throw 'No visible window belongs to the target process'}
  $chosen=@($windows | Where-Object {$_.title -match '^Nova Drift'})
  if($chosen.Count -eq 0) {throw 'Game window not visible yet (Nova Drift title required; console excluded)'}
@@ -73,6 +82,14 @@ if($Action -eq 'press' -or $Action -eq 'focus' -or $Action -eq 'close') {
  } else {
  if($chosen[0].hung) {throw 'Target window is hung'}
  if(-not [NovaWindow]::Focus($hwnd) -and -not $AllowBackground) {throw 'Windows did not focus the requested owned game window'}
+ if($Action -eq 'mouse') {
+  $null=OwnedProcess
+  if([NovaWindow]::GetForegroundWindow() -ne $hwnd) {throw 'Mouse input requires the verified game in foreground'}
+  $flags=@{leftDown=2;leftUp=4;rightDown=8;rightUp=16}
+  [NovaWindow]::MouseButton([uint32]$flags[$MouseEvent])
+  $mouseInfo=[ordered]@{event=$MouseEvent}
+
+ }
  $map=@{ENTER=13;ESCAPE=27;SPACE=32;UP=38;DOWN=40;LEFT=37;RIGHT=39;TAB=9;F8=119}
  if($Action -eq 'press') {foreach($name in $Keys.Split(',')) {
   $null=OwnedProcess
@@ -92,4 +109,4 @@ if($Action -eq 'press' -or $Action -eq 'focus' -or $Action -eq 'close') {
  }}
  }
 }
-[ordered]@{pid=$TargetPid;start_ticks=$process.StartTime.ToUniversalTime().Ticks;exe=$process.MainModule.FileName;sha256=$ExpectedSha256;action=$Action;foreground=[NovaWindow]::GetForegroundWindow().ToInt64();windows=$windows} | ConvertTo-Json -Depth 5 -Compress
+[ordered]@{pid=$TargetPid;start_ticks=$process.StartTime.ToUniversalTime().Ticks;exe=$process.MainModule.FileName;sha256=$ExpectedSha256;action=$Action;mouse=$mouseInfo;foreground=[NovaWindow]::GetForegroundWindow().ToInt64();windows=$windows} | ConvertTo-Json -Depth 5 -Compress

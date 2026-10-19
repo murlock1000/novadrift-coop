@@ -35,7 +35,7 @@ def run(ns):
         control(level=2);wait(lambda:tray(1)['budget']>=2)
         control(engine_input=1,engine_key=120);wait(lambda:tray(1)['open']==1);control(engine_input=1)
         before=tray(1)['budget'];partner=tray(2)['budget']
-        control(engine_input=1,engine_key=ord('V'));wait(lambda:tray(1)['budget']==before-1);control(engine_input=1)
+        control(engine_input=1,engine_key=ord('O'),engine_key2=ord('V'));wait(lambda:tray(1)['budget']==before-1);control(engine_input=1)
         check('P1 keyboard tray uses own confirm and budget',tray(2)['budget']==partner,{'first':tray(1),'second':tray(2)})
         ui('press','ESCAPE');wait(lambda:metrics()['paused']==1)
         ui('press','ESCAPE');wait(lambda:metrics()['paused']==0)

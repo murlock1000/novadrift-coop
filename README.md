@@ -4,7 +4,10 @@ A two-player co-op mod for Nova Drift. Each player controls their own ship and
 chooses their own upgrades. XP is shared. Supports local play and Steam Remote
 Play Together.
 
-![Two ships sharing the arena, with separate red and gold HUDs](docs/screenshots/co-op-gameplay.png)
+[![Watch co-op gameplay](docs/screenshots/gameplay-video.jpg)](docs/videos/NovaDrift-Coop-Gameplay.mp4)
+
+[Watch or download the gameplay video](docs/videos/NovaDrift-Coop-Gameplay.mp4) · 50 seconds, 1080p, game audio.
+Controls, builds and revival positioning are scripted for this demonstration.
 
 ## Features
 
@@ -61,7 +64,10 @@ Your original Steam installation and saves stay separate from the co-op copy.
 | Fire | Right mouse button | N |
 | Open upgrades | Middle mouse button | F7 |
 | Inspect an upgrade | Hover its hex | Hold O |
-| Choose an upgrade | Left click | N |
+| Choose an upgrade | Left click | Hold O + N |
+
+Opening upgrades keeps flight controls active. P2 holds O to browse with I/J/K/L,
+then releases it to fly.
 
 Press **F6** to configure either player, or open `ConfigureControls.cmd`. **Escape** pauses the game for both players.
 See [all controls](docs/CONTROLS.md) for rerolls, constructs and controller mappings.

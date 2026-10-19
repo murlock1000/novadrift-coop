@@ -13,11 +13,11 @@ runtime=active_runtime()
 out=ROOT/'local/fullship-test/qa'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 out.mkdir(parents=True)
 report={'status':'FAIL','checks':[],'artifact':str(out),'mutation_context':mutation,'mutation_native_ui':ui_mutation,'mutation_input_sharing':sharing_mutation}
-process=None;pid=None;counter=0;config_before=None
+process=None;pid=None;counter=0;config_before=None;mouse_fixture=None;saved_controls_fixture=None
 before=fingerprint(ORIGINAL_SAVES)
 def control(**changes):
  global counter
- counter+=1;c=dict(counter=counter,qa_focus=1,mutate=0,rescue_mode=int('--polish' in sys.argv),mutate_hud=int(ui_mutation),mutate_sharing=int(sharing_mutation),mutate_beacon=0,mutate_startup=int('--mutation-startup' in sys.argv),mutate_pause=int('--mutation-pause' in sys.argv),mutate_healthfx=int('--mutation-healthfx' in sys.argv));c.update(changes)
+ counter+=1;c=dict(counter=counter,qa_focus=1,mutate=0,rescue_mode=int('--polish' in sys.argv),mutate_hud=int(ui_mutation),mutate_sharing=int(sharing_mutation),mutate_beacon=0,mutate_tray_input=int('--mutation-tray-input' in sys.argv),mutate_tray_cursor=int('--mutation-tray-cursor' in sys.argv),mutate_startup=int('--mutation-startup' in sys.argv),mutate_pause=int('--mutation-pause' in sys.argv),mutate_death_step=int('--mutation-death-step' in sys.argv),mutate_thrust_cleanup=int('--mutation-thrust-cleanup' in sys.argv),mutate_healthfx=int('--mutation-healthfx' in sys.argv));c.update(changes)
  temp=runtime/'ship-control.pending';temp.write_text(''.join(f'{k}={v}\n' for k,v in c.items()))
  # The native reader can briefly hold a Windows handle without delete sharing.
  for attempt in range(80):
@@ -46,6 +46,15 @@ def phase(seconds=2,**changes):
  result=[r for r in rows() if r['command']==c]
  check('phase advances native ships',len(result)>5 and result[-1]['steps2']>result[0]['steps2'],result[-1]);return result
 try:
+ if '--saved-controls' in sys.argv:
+  profile=runtime/'p1-controls.ini'
+  saved_controls_fixture=(profile,profile.read_bytes() if profile.exists() else None)
+  profile.write_text('[controls]\ndevice=keyboard\nsteering=tank\nmouse_aim=1\n[keys]\nup=1\nleft=65\ndown=83\nright=68\nfire=2\nstabilize=160\nformation=70\nupgrade=4\n')
+ if '--tray-controls' in sys.argv:
+  fixture=runtime.parent/'test-profile/Local/NovaDrift/save.ini'
+  previous=fixture.read_bytes()
+  mouse_fixture=(fixture,previous)
+  fixture.write_bytes(re.sub(rb'disableMouseAim="[^"]*"',b'disableMouseAim="0.000000"',previous))
  for name in ['ship-events.log','ship-telemetry.jsonl','ship-ui.jsonl','ship-performance.jsonl','aurie.log','runner.log','ship-balance.jsonl']:
   p=runtime/name
   if p.exists():shutil.move(str(p),str(out/('previous-'+name)))
@@ -69,16 +78,22 @@ try:
   ui('press');time.sleep(2)
  baseline=wait(lambda: next((r for r in reversed(rows()) if r['p1']>=100000 and r['b1']>=100000),None))
  check('one native P1',baseline['p1_asset']==603,baseline)
- if '--upgrade-flow' not in sys.argv:control(join=1)
+ if '--upgrade-flow' not in sys.argv and '--death-effects' not in sys.argv:control(join=1)
  joined=wait(lambda: next((r for r in reversed(rows()) if r.get('ready') and r['p2']>=100000),None))
  check('two distinct native player ships',joined['p1']!=joined['p2'] and joined['p1_asset']==joined['p2_asset']==603,joined)
  check('two distinct build owners',joined['b1']!=joined['b2'] and joined['hull1']>0 and joined['hull2']>0,joined)
  if '--upgrade-flow' in sys.argv:
   from qa_upgrade_flow import run
   run(globals());report['status']='PASS';raise SystemExit(0)
+ if '--death-effects' in sys.argv:
+  from qa_death_effects import run
+  run(globals());report['status']='PASS';raise SystemExit(0)
  if '--stock-hud' in sys.argv and '--mutation-stock-hud' in sys.argv:
   from qa_stock_hud import run
   run(globals());raise RuntimeError('Shared-stock mutation unexpectedly completed')
+ if '--tray-controls' in sys.argv:
+  from qa_tray_controls import run
+  run(globals());report['status']='PASS';raise SystemExit(0)
  if '--dual-controls' in sys.argv:
   from qa_dual_controls import run
   run(globals());report['status']='PASS';raise SystemExit(0)
@@ -138,7 +153,7 @@ try:
   budgets=(tray(1)['budget'],tray(2)['budget']);mods=rows(True)[-1];selected1=tray(1)['cards'][0];selected2=tray(2)['cards'][0]
   control(tray_action=1,owner=1,tray_pick=0);wait(lambda:tray(1)['budget']==budgets[0]-1)
   check('P1 native purchase leaves P2 budget and offers unchanged',tray(2)['budget']==budgets[1] and tray(2)['cards']==cards and tray(2)['open']==1,{'first':tray(1),'second':tray(2)})
-  control(engine_input=1,engine_key=ord('N'));wait(lambda:tray(2)['budget']==budgets[1]-1)
+  control(engine_input=1,engine_key=ord('O'),engine_key2=ord('N'));wait(lambda:tray(2)['budget']==budgets[1]-1)
   control(engine_input=1)
   wait(lambda:selected1 in tray(1)['acquired'] and selected2 in tray(2)['acquired'])
   check('selected native augments reach the correct builds',selected1 in tray(1)['acquired'] and selected2 in tray(2)['acquired'],{'first':tray(1),'second':tray(2)})
@@ -346,10 +361,10 @@ try:
   check('configured upgrades stay compact',rows(True)[-1]['ui']==rows(True)[-1]['menu_session']==0,rows(True)[-1])
   snapshot('both-native-starter-trays')
   control(tray_action=1,owner=1,tray_pick=0);wait(lambda:rows(True)[-1]['choices1']==0)
-  control(key=ord('K'));time.sleep(.25);control();time.sleep(.15)
+  control(engine_input=1,engine_key=ord('O'),engine_key2=ord('K'));time.sleep(.25);control(engine_input=1);time.sleep(.15)
   check('P2 down browses without cancelling',personal_tray(2)['open'] and rows(True)[-1]['choices2']>0,personal_tray(2))
   snapshot('p2-native-starter-tray')
-  control(key=ord('N'));time.sleep(.25);control()
+  control(engine_input=1,engine_key=ord('O'),engine_key2=ord('N'));time.sleep(.25);control(engine_input=1)
   wait(lambda:rows(True)[-1]['ui']==0 and rows(True)[-1]['choices2']==0)
   check('configured compact navigation and confirm',rows(True)[-1]['choices2']==0,rows(True)[-1])
   # Exercise the same deferred pause/editor route used by the physical F6 hotkey.
@@ -496,6 +511,11 @@ finally:
  for name in ['ship-events.log','ship-telemetry.jsonl','ship-ui.jsonl','ship-performance.jsonl','ship-balance.jsonl','aurie.log']:
   p=runtime/name
   if p.exists():(out/name).write_bytes(p.read_bytes())
+ if mouse_fixture is not None:mouse_fixture[0].write_bytes(mouse_fixture[1])
+ if saved_controls_fixture is not None:
+  path,previous=saved_controls_fixture
+  if previous is None:path.unlink(missing_ok=True)
+  else:path.write_bytes(previous)
  preserved=before==fingerprint(ORIGINAL_SAVES)
  report['original_saves_unchanged']=preserved
  if not preserved:report['status']='FAIL'

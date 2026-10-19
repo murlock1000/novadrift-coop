@@ -76,6 +76,8 @@ python3 tools/qa_ships.py --overlays
 python3 tools/qa_ships.py --stock-hud
 python3 tools/qa_ships.py --starter-bank
 python3 tools/qa_ships.py --dual-controls
+python3 tools/qa_ships.py --tray-controls --saved-controls
+python3 tools/qa_ships.py --death-effects
 python3 tools/qa_launcher.py
 python3 tools/qa_launcher.py --remote-wrapper
 ```
@@ -97,6 +99,26 @@ python3 tools/qa_ships.py --upgrade-flow --mutation-healthfx
 They restore the native starter menu, combined pause inventory, and old central
 shield-flash coordinates respectively. Each must fail its corresponding check.
 
+`--tray-controls` starts both ships from rest with both trays open, injects native
+mouse and keyboard input, verifies thrust/steering/fire without spending points,
+and checks deliberate purchases with mouse and Inspect+confirm. The negative
+control `--tray-controls --mutation-tray-input` restores the old visible-tray
+blocker and must fail the acceleration check.
+`--tray-controls --mutation-tray-cursor` restores OS-pointer hit testing and must
+fail the native cursor placement check. The mouse checks position the real native cursor as a QA fixture and inject
+Windows button events; raw mouse-device movement is not reproduced by this
+setup. Gameplay deliberately locks the OS pointer at window center. The suite temporarily enables native mouse aim
+in the owned QA profile and restores the previous preference bytes afterward.
+
+`--saved-controls` writes a P1 profile before starting the isolated client, covering
+native input-field initialization during module loading.
+
+`--death-effects` creates thrust effects through actual native ship input, then
+downs each pilot while breaking their shield. It verifies effect cleanup,
+survivor combat, preserved builds, beacon revival, restored Salvo firing and
+the native end screen. Its proximity placement is an explicit QA fixture.
+Run it with `--mutation-death-step` or `--mutation-thrust-cleanup` to restore
+each original missing-player crash independently.
 
 `tools/diagnose_display.ps1` passively reports physical client/monitor bounds for
 an exact PID, creation time and EXE SHA. Monitor coverage proves fullscreen-sized

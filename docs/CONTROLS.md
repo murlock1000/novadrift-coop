@@ -36,8 +36,11 @@ controls appear in the strip.
 | Open / close personal upgrades | F7 (controller: Back) |
 | Configure controls | F6 |
 
-Movement keys browse upgrades while P2's strip is open. Directional steering in
-combat turns toward the pressed direction and retains native momentum.
+Opening a strip keeps flight controls active. Hold **O** (the configured
+Formation/Inspect control) to browse with movement keys, choose with **N**,
+reroll with **U**, or banish with **8**. Release Inspect to fly again. The same
+modifier applies to keyboard/controller P1 using that player's bindings.
+Directional steering turns toward the pressed direction and retains native momentum.
 
 F6 pauses play and opens the editor. `ConfigureControls.cmd` opens it separately; `ConfigureP2.cmd` remains an alias.
 Choose directional/tank steering, rebind keys or configure controller mappings.
@@ -49,9 +52,12 @@ augments both use the compact strips and configured controls.
 ## Playing together
 
 Each player keeps their own upgrade choices and rerolls. Closing a strip
-preserves its offers and spends nothing. While choosing, that ship drifts under
-normal physics, remains vulnerable, and uses its controls for the strip; the
-teammate can keep fighting. Escape remains a shared pause. Both native build
+preserves its offers and spends nothing. Visible strips leave both ships
+controllable. P1's clicks on shop items consume only the left click until
+release; firing remains available. Holding Inspect temporarily directs that
+player's keyboard/controller to the strip while their ship drifts under normal
+physics and remains vulnerable. The teammate keeps full control. Escape remains
+a shared pause. Both native build
 inventories appear separately; click P1 or P2, or press Tab, to switch the
 central stats. Hover an icon for the native item information.
 
@@ -66,3 +72,5 @@ Both ships join before starting gear is selected. F8 retries a failed join;
 it does not give a free redeploy.
 For Steam Remote Play, the host uses mouse and the guest uses keyboard. Grant
 guest keyboard access, leave guest mouse off, and keep the host game focused.
+
+The `+number` above a pilot’s HUD is their saved upgrade count. The opening-button hint appears briefly when more upgrades become available.

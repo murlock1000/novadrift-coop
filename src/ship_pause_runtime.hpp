@@ -29,12 +29,14 @@ public:
    double rows=std::max(1.0,std::floor((height-250*native_scale)/row)-3);
    double ban_rows=std::max(1.0,std::floor((height-250*native_scale)/std::max(1.0,fields_[9].ToDouble()*factor)));
    double need=(std::ceil(count/rows)+1.5)*fields_[2].ToDouble()+(std::ceil(ban_count/ban_rows)+1)*fields_[7].ToDouble();
-   if(need*factor<=width*.22)break;factor*=.9;}
-  panel_x[owner]=owner==1?48*native_scale:width*.74;
+   if(need*factor<=width*.15)break;factor*=.9;}
+  // Native stats extend beyond the middle three fifths of the GUI. Keep
+  // both inventories in the outer lanes, including their banished columns.
+  panel_x[owner]=owner==1?48*native_scale:width*.82;
   panel_y=112*native_scale;
   access.set(controller,LayoutCells[0],panel_x[owner]);access.set(controller,LayoutCells[1],panel_y);
   for(int i=2;i<5;++i)access.set(controller,LayoutCells[i],fields_[i].ToDouble()*factor);
-  access.set(controller,LayoutCells[5],(owner==1?width*.26:width)-48*native_scale);access.set(controller,LayoutCells[6],panel_y);
+  access.set(controller,LayoutCells[5],(owner==1?width*.20:width)-48*native_scale);access.set(controller,LayoutCells[6],panel_y);
   for(int i=7;i<std::size(LayoutCells);++i)access.set(controller,LayoutCells[i],fields_[i].ToDouble()*factor);
   SetGlobal(0x1b02718,native_scale*factor);
   auto list=Field(Resolve(powers[owner]),0x1af7678);
@@ -109,7 +111,7 @@ void Draw(void*self,double width,double){
  const bool tab=Trays::KeyDown(VK_TAB),click=Builtin("mouse_check_button",{RValue(1)}).ToBoolean();
  if(tab&&!previous_tab)stats_owner=3-stats_owner;
  if(click&&!previous_click){double x=Builtin("device_mouse_x_to_gui",{RValue(0)}).ToDouble(),y=Builtin("device_mouse_y_to_gui",{RValue(0)}).ToDouble();
-  if(y<panel_y+25*Global(0x1b02718)){if(x<width*.28)stats_owner=1;else if(x>width*.72)stats_owner=2;}}
+  if(y<panel_y+25*Global(0x1b02718)){if(x<width*.20)stats_owner=1;else if(x>width*.80)stats_owner=2;}}
  previous_tab=tab;previous_click=click;
  ndship::hud::detail::Painter p(api,(CInstance*)self);
  auto color=p.Call("draw_get_color"),alpha=p.Call("draw_get_alpha"),font=p.Call("draw_get_font"),align=p.Call("draw_get_halign"),valign=p.Call("draw_get_valign");

@@ -1,5 +1,57 @@
 # Validation record
 
+## Death crashes, HUD and gameplay recording (2026-10-19)
+
+DLL `21986c00abe4b491bbe54ed074f82820ad5e3e1708203a49fd8d7405f3e2dfca`
+passed 29 native death/effect checks, 25 upgrade-flow checks and 33 shop-control
+checks, including launch with saved P1 controls. Both pilots were
+tested with native Hullbreaker, Salvo and Reflect. Real thrust input created the
+native effects before shield break and death. The tests verified effect cleanup,
+survivor firing, retained Powers/builds, beacon progress, native revival, resumed
+Salvo firing, and the native end screen after both deaths. Proximity placement
+is an explicit QA fixture. Original save fingerprints remained unchanged.
+
+With the same DLL, disabling the preflight death check reproduced
+`oPowers.Step2:79`; omitting thrust-effect cleanup reproduced
+`oBurstThrust.Step2:5`. Both were the original missing-player errors,
+confirming that the regression detects each fix independently.
+
+The pause screenshot was recaptured and visually checked: P2’s inventory now
+sits outside the native stats columns. Native icons and hover rendering remain.
+Upgrade key hints fade after 2.5 seconds; the gray banked-choice count remains.
+Obsolete tutorial effects are associated with their parent even before joining
+and after the parent disappears, addressing the detached purple pulse path.
+The recording then reproduced a second background path: the tutorial’s base
+trapezoid survived DrawGUI text suppression. The final visibility change hides
+that exact obsolete tutorial across native draw passes while leaving its
+simulation and cleanup active. The same visibility rule includes the native
+Banish, Decline and Reroll guides: the latter two explicitly carry the native
+`sTutorialBarWide` background in object metadata. In-game captures after this change show the bar
+absent with trays both open and closed. This final visibility change was made
+after the suites above; its DLL hash is
+`5fd3f9e894d5aaa410730017ec1fe5feffcef9666654b1616922e08e31c18e97`.
+
+## Flight controls with compact shops (2026-10-19)
+
+The initial input-fix DLL passed 33 input/upgrade checks, 36 native tray checks and 27
+per-player controls checks. Both ships accelerate from rest and fire with both
+trays visible; keyboard combat does not browse or purchase offers. Holding
+Inspect deliberately routes that player's controls to the tray. Releasing it
+restores movement even with confirmation held. Mouse purchases consume only
+that click, preserving firing and teammate movement, including rebound P1
+controls. Escape still pauses both players.
+
+Hit testing projects the native software cursor through the current camera
+spans. The OS pointer remains locked by the game during combat. Mouse-button
+checks use actual Windows events; the cursor is positioned as an explicit QA
+fixture because injected motion did not reproduce the raw-device cursor stream
+in this setup. This is not a physical mouse/controller hardware playtest.
+
+Two negative controls restored the old all-input blocker and OS-pointer hit
+testing. They failed the acceleration and native-cursor checks respectively.
+All three positive suites and both negative runs used the same DLL. Original
+save fingerprints remained unchanged.
+
 ## Compact starting gear and separate pause builds (2026-10-19)
 
 Starting weapons, shields and bodies now use the same compact trays as later
@@ -232,3 +284,19 @@ screenshot capture so their state cannot advance between the two images. This is
 
 The README revival image is a fresh game-client capture with the full native
 beacon visible inside the arena; its gold outline is checked in the image.
+
+## Gameplay video (2026-10-19)
+
+The README links a committed H.264/AAC MP4 recorded from the native game client
+at 1920×1080, 30 fps. Only the game window and its process audio were captured;
+there is no desktop, microphone or voice track. The clip uses scripted inputs,
+preselected builds and a staged revival position. Combat, offers, purchases,
+death, beacon progress and respawn are native simulation. Setup is trimmed out.
+
+The successful continuous recording used DLL
+`5fd3f9e894d5aaa410730017ec1fe5feffcef9666654b1616922e08e31c18e97`.
+The final tutorial visibility grouping was extended afterward to include the
+other obsolete upgrade guides. Native playtest captures are kept private; the
+export and poster are in `docs/videos` and `docs/screenshots`.
+
+The final DLL `e40f336baf1863fa3d10fd49f28d0adb6c150df6a6f177d31fc0b501cb008916` passed the 25-check native upgrade-flow suite after grouping those obsolete guides. Original save fingerprints remained unchanged. The final video export was checked for black segments, decoded end frames, codec/resolution and audio peaks.

@@ -8,7 +8,8 @@ struct Tray {
  bool open=false,requested=false,inspect=false;unsigned long long epoch=0,hint_until=0;double revision=-1;int selected=0;
  std::array<std::vector<RValue>,11> lists;std::array<RValue,6> counts;std::vector<Card> cards;
 };
-bool consume_confirm[3]{};
+bool consume_confirm[3]{},consume_click[3]{},keyboard_focus[3]{};
+double last_budget[3]{};unsigned long long bank_hint_until[3]{};
 Tray trays[3];int transaction=0,broker_id=-1,transaction_owner=0;bool rerolled=false;
 std::vector<int> children;unsigned long long generated=0,purchased=0,failed=0;
 nd::Event original_create=nullptr;nd::Script original_finish=nullptr,original_reroll=nullptr;
@@ -22,7 +23,7 @@ RValue Get(void* self,const char* name){return Builtin("variable_instance_get",{
 void Put(void* self,const char* name,const RValue& v){Builtin("variable_instance_set",{Ref(Id(self)),RValue(name),v});}
 bool Busy(){return transaction!=0;}
 bool IsOpen(int owner){return owner>=1&&owner<=2&&trays[owner].open;}
-void Reset(){for(auto& tray:trays)tray=Tray{};consume_confirm[1]=consume_confirm[2]=false;}
+void Reset(){for(auto& tray:trays)tray=Tray{};for(int owner=1;owner<=2;++owner){consume_confirm[owner]=consume_click[owner]=keyboard_focus[owner]=false;last_budget[owner]=0;bank_hint_until[owner]=0;}}
 bool CombatStage(int owner){
  if(!ready||!globals||owner<1||owner>2||!Resolve(powers[owner]))return false;
  ndship::OwnerScope scope(owner);return Global(0x1af8938)>=1;
@@ -120,7 +121,10 @@ bool Act(int owner,int action,int pick=-1){
  if(action==1){
   double before=Budget(owner);{Transaction tx(owner,2);auto b=tx.Make();if(!b)return false;Fill(b,tray);Invoke(0x1053f0,b);}
   if(Budget(owner)!=before-1){++failed;return false;}
-  tray=Tray{};consume_confirm[owner]=true;++purchased;
+  tray=Tray{};
+  if(owner==1&&(!p1_custom||p1_controls.Get().mouse_aim))consume_click[owner]=true;
+  else consume_confirm[owner]=true;
+  ++purchased;
   if(Global(0x1af8938)<4&&Budget(owner)>0)tray.requested=true;
   return true;
  }
@@ -146,7 +150,18 @@ void Toggle(int owner){
 // Edges are sampled once on the shared Controller step. Engine keyboard state
 // includes Steam Remote Play input; XInput uses the configured guest slot.
 unsigned previous_bits[3]{};
-bool BlocksInput(int owner){return IsOpen(owner)||(owner>=1&&owner<=2&&consume_confirm[owner]);}
+double observed_mx=0,observed_my=0,observed_w=0,observed_h=0;
+bool MouseTray(int owner){return owner==1&&(!p1_custom||p1_controls.Get().mouse_aim);}
+bool BlocksInput(int owner){return IsOpen(owner)&&(keyboard_focus[owner]||(qa_mode&&command.mutate_tray_input));}
+bool ConsumesClick(int owner){return owner>=1&&owner<=2&&consume_click[owner];}
+bool BlocksKey(int owner,int key){
+ if(owner<1||owner>2||key==VK_ESCAPE)return false;
+ if(BlocksInput(owner))return true;
+ if(consume_confirm[owner]&&key==ndship::input::KeyFire)return true;
+ // Custom profiles filter physical LMB before directional/tank translation,
+ // preserving unrelated keyboard/controller input bound to the same action.
+ return consume_click[owner]&&!P1InputActive()&&key==VK_LBUTTON;
+}
 bool KeyDown(int key){
  if(key<1||key>255)return false;
  if(qa_mode)return command.engine_input?Builtin("keyboard_check",{RValue(key)}).ToBoolean():command.key==key;
@@ -155,48 +170,70 @@ bool KeyDown(int key){
 struct Geometry {double x,y,w,row;int first;};
 Geometry Layout(int owner,double width,double height){double scale=std::min(width/2400.0,height/1350.0);return {owner==1?40*scale:width-600*scale,height-285*scale,560*scale,104*scale,(trays[owner].selected/5)*5};}
 void Tick(){
+ keyboard_focus[1]=keyboard_focus[2]=false;
  if(!ready||joining||transaction||ndship::lifecycle::IsTearingDown())return;
  auto controller=Resolve(controller_id);if(!controller)return;
  for(int owner=1;owner<=2;++owner)if(!HasShip(owner))trays[owner]=Tray{};
  if(Read(controller,0x1b004b8,1)!=0||Read(controller,0x1af7718,0)!=0||!Builtin("window_has_focus").ToBoolean()||ndship::upgrade::SessionActive()||CountUI()!=0||Read(controller,ndship::build::ControllerCanLevel.cell,0)==0)return;
  double width=Builtin("display_get_gui_width").ToDouble(),height=Builtin("display_get_gui_height").ToDouble();
  double mx=Builtin("device_mouse_x_to_gui",{RValue(0)}).ToDouble(),my=Builtin("device_mouse_y_to_gui",{RValue(0)}).ToDouble();
+ // enterGameplayMode locks the OS pointer at window center. The visible
+ // native cursor integrates relative mouse deltas in world coordinates.
+ // Use that same cursor for combat UI; never unlock or pause flight for a tray.
+ {
+ ndship::OwnerScope mouse(1);
+ auto cursor_value=Builtin("instance_find",{RValue(741),RValue(0)});auto cursor=Resolve((int)cursor_value.m_i64);
+ const double vw=Global(0x1af7468),vh=Global(0x1af7418),vx=Global(0x1af7428),vy=Global(0x1af74a8);
+ // This environment's injected Windows motion does not reproduce the raw
+ // cursor stream. QA places the real native cursor at the controller boundary.
+ if(qa_mode&&command.cursor_fixture){
+  if(!cursor){auto made=Builtin("instance_create_depth",{RValue(0.0),RValue(0.0),RValue(-100.0),RValue(741)});cursor=Resolve((int)made.m_i64);}
+  if(cursor){access.set(cursor,nd::Fields::X,vx+command.cursor_x*vw/width);access.set(cursor,nd::Fields::Y,vy+command.cursor_y*vh/height);}
+ }
+ if(cursor&&vw>0&&vh>0&&!(qa_mode&&command.mutate_tray_cursor)){mx=(Read(cursor,nd::Fields::X)-vx)*width/vw;my=(Read(cursor,nd::Fields::Y)-vy)*height/vh;}
+ }
+ observed_mx=mx;observed_my=my;observed_w=width;observed_h=height;
  for(int owner=1;owner<=2;++owner){
+ if(Eligible(owner)){double budget=Budget(owner);if(budget>last_budget[owner])bank_hint_until[owner]=GetTickCount64()+2500;last_budget[owner]=budget;}
  const auto& profile=owner==1?p1_controls.Get():controls.Get();unsigned pad=0;double axis=0,axis_x=0;
  if(!qa_mode&&profile.device!=ndship::config::Device::Keyboard){XINPUT_STATE p{};if(XInputGetState(profile.controller_slot,&p)==ERROR_SUCCESS){pad=p.Gamepad.wButtons;axis=p.Gamepad.sThumbLY/32768.0;axis_x=p.Gamepad.sThumbLX/32768.0;if(p.Gamepad.bRightTrigger>30)pad|=ndship::config::RightTrigger;if(p.Gamepad.bLeftTrigger>30)pad|=ndship::config::LeftTrigger;}}
  auto action=[&](ndship::config::Action a){return (profile.device!=ndship::config::Device::Controller&&KeyDown(profile.Key(a)))||(pad&profile.Pad(a))!=0;};
  unsigned bits=((owner==1&&!p1_custom?KeyDown(VK_MBUTTON):action(ndship::config::Action::Upgrade))?2u:0u)|(action(ndship::config::Action::Fire)?4u:0u)|((action(ndship::config::Action::Up)||axis>.55)?8u:0u)|((action(ndship::config::Action::Down)||axis<-.55)?16u:0u)|(action(ndship::config::Action::Stabilize)?32u:0u)|(action(ndship::config::Action::Deploy)?64u:0u)|(action(ndship::config::Action::Construct2)?128u:0u)|(Builtin("mouse_check_button",{RValue(1)}).ToBoolean()?256u:0u)|((action(ndship::config::Action::Left)||axis_x<-.55)?512u:0u)|((action(ndship::config::Action::Right)||axis_x>.55)?1024u:0u);
- unsigned pressed=bits&~previous_bits[owner];previous_bits[owner]=bits;if(!(bits&(owner==1&&(!p1_custom||profile.mouse_aim)?256:4)))consume_confirm[owner]=false;
+ unsigned pressed=bits&~previous_bits[owner];previous_bits[owner]=bits;
+ if(!(bits&4))consume_confirm[owner]=false;
+ if(!(bits&256))consume_click[owner]=false;
   auto& tray=trays[owner];const bool requested=tray.requested;
   if(requested&&(!Eligible(owner)||Budget(owner)<=0||Read(Resolve(powers[owner]),0x1af7498,0)<=0))continue;
   bool opening=requested||(pressed&2);tray.requested=false;
   if(qa_mode&&command.tray==owner){command.tray=0;opening=true;}
   bool chip=owner==1&&(!p1_custom||profile.mouse_aim)&&mx<width*.24&&my>height-195*height/1350&&my<height-155*height/1350;
-  if(chip&&(pressed&256))opening=true;
+  if(chip&&(pressed&256)){opening=true;consume_click[owner]=true;}
   if(opening){if(!requested||!tray.open)Toggle(owner);continue;}
   if(!tray.open)continue;
   tray.inspect=false;
-  if(owner==1&&(!p1_custom||profile.mouse_aim)){
+  if(MouseTray(owner)){
    if(Builtin("mouse_wheel_up").ToBoolean())tray.selected=(tray.selected+(int)tray.cards.size()-1)%(int)tray.cards.size();
    if(Builtin("mouse_wheel_down").ToBoolean())tray.selected=(tray.selected+1)%(int)tray.cards.size();
    auto g=Layout(owner,width,height);double scale=std::min(width/2400.0,height/1350.0);
    if(my>=g.y-42*scale&&my<=g.y+42*scale){
     for(int k=0;k<5;++k){int index=g.first+k;double cx=g.x+50*scale+k*g.row;
-     if(index<(int)tray.cards.size()&&std::abs(mx-cx)<=40*scale){tray.selected=index;tray.inspect=true;if(pressed&256){Act(owner,1);break;}}
+     if(index<(int)tray.cards.size()&&std::abs(mx-cx)<=40*scale){tray.selected=index;tray.inspect=true;if(pressed&256){consume_click[owner]=true;Act(owner,1);break;}}
     }
    }else if(my>=g.y+78*scale&&my<=g.y+108*scale&&(pressed&256)){
-    if(mx>=g.x+g.w*.42&&mx<=g.x+g.w*.68)Act(owner,2);
-    else if(mx>=g.x+g.w*.72&&mx<=g.x+g.w&&Read(Resolve(powers[owner]),0x1af96c8,0)==8)Act(owner,3);
+    if(mx>=g.x+g.w*.42&&mx<=g.x+g.w*.68){consume_click[owner]=true;Act(owner,2);}
+    else if(mx>=g.x+g.w*.72&&mx<=g.x+g.w&&Read(Resolve(powers[owner]),0x1af96c8,0)==8){consume_click[owner]=true;Act(owner,3);}
    }
   }
   else{
-   tray.inspect=action(ndship::config::Action::Formation);
-   if(pressed&(8|512))tray.selected=(tray.selected+(int)tray.cards.size()-1)%(int)tray.cards.size();
-   if(pressed&(16|1024))tray.selected=(tray.selected+1)%(int)tray.cards.size();
-   if(pressed&32){tray.open=false;continue;}
-   if(pressed&4){Act(owner,1);continue;}
-   if(pressed&64){Act(owner,2);continue;}
-   if(pressed&128){Act(owner,3);continue;}
+   tray.inspect=keyboard_focus[owner]=action(ndship::config::Action::Formation);
+   if(keyboard_focus[owner]){
+    if(pressed&(8|512))tray.selected=(tray.selected+(int)tray.cards.size()-1)%(int)tray.cards.size();
+    if(pressed&(16|1024))tray.selected=(tray.selected+1)%(int)tray.cards.size();
+    if(pressed&32){tray.open=false;continue;}
+    if(pressed&4){Act(owner,1);continue;}
+    if(pressed&64){Act(owner,2);continue;}
+    if(pressed&128){Act(owner,3);continue;}
+   }
   }
   if(qa_mode&&command.tray_action&&command.owner==owner){int a=command.tray_action;command.tray_action=0;Act(owner,a,command.tray_pick);}
  }
@@ -228,7 +265,12 @@ void Draw(void* self,double width,double height){
   if(!Eligible(owner)||Budget(owner)<=0)continue;
   int accent=ndship::hud::PlayerColor(owner);double chipx=owner==1?40*scale:width-600*scale;
   auto& tray=trays[owner];
-  if(!tray.open)p.FittedText(chipx,height-185*scale,"+ "+std::to_string((int)Budget(owner))+"  "+(owner==1&&!p1_custom?"Mouse middle":Binding(ndship::config::Action::Upgrade,owner)),text_color,text_scale,520*scale);if(!tray.open||tray.cards.empty())continue;
+  if(!tray.open){
+   p.FittedText(chipx,height-185*scale,"+"+std::to_string((int)Budget(owner)),secondary,text_scale,90*scale);
+   double hint=HintOpacity(bank_hint_until[owner],GetTickCount64());
+   if(hint>0)p.FittedText(chipx+90*scale,height-185*scale,owner==1&&!p1_custom?"Mouse middle":Binding(ndship::config::Action::Upgrade,owner),secondary,text_scale,420*scale,0,hint);
+  }
+  if(!tray.open||tray.cards.empty())continue;
   auto g=Layout(owner,width,height);
   for(int index=g.first;index<std::min((int)tray.cards.size(),g.first+5);++index){double x=g.x+50*scale+(index-g.first)*g.row;
    Sprite(p,tray.cards[index].sprite,x,g.y,68*scale,0xffffff);
@@ -245,11 +287,11 @@ void Draw(void* self,double width,double height){
    p.FittedText(g.x+g.w*.45,g.y+84*scale,"Reroll "+rerolls,secondary,text_scale,g.w*.24);
    if(researcher)p.FittedText(g.x+g.w*.75,g.y+84*scale,"Banish",secondary,text_scale,g.w*.25);
   }else{
-   std::string footer=Binding(ndship::config::Action::Deploy,owner)+" reroll "+rerolls;
+   std::string footer=Binding(ndship::config::Action::Formation,owner)+" + "+Binding(ndship::config::Action::Deploy,owner)+" reroll "+rerolls;
    if(researcher)footer+=" | "+Binding(ndship::config::Action::Construct2,owner)+" banish";
    p.FittedText(g.x+g.w*.45,g.y+84*scale,footer,secondary,text_scale,g.w*.55);
    double hint=HintOpacity(tray.hint_until,GetTickCount64());
-   if(hint>0)p.FittedText(g.x,g.y+84*scale,Binding(ndship::config::Action::Fire,owner)+" choose / "+Binding(ndship::config::Action::Formation,owner)+" inspect",secondary,text_scale,g.w*.43,0,hint);
+   if(hint>0)p.FittedText(g.x,g.y+84*scale,"Hold "+Binding(ndship::config::Action::Formation,owner)+" to choose",secondary,text_scale,g.w*.43,0,hint);
   }
   if(tray.inspect){
    ndship::OwnerScope scope(owner);double sx=text_scale,available=g.w-80*scale;
@@ -272,12 +314,12 @@ void Tick();void Draw(void*,double,double);
 void Trace(int counter){
  if(!CoopBalance::trace||!ready||transaction)return;
  for(int owner=1;owner<=2;++owner){auto& tray=trays[owner];ndship::OwnerScope scope(owner);
-  std::fprintf(CoopBalance::trace,"{\"kind\":\"tray\",\"counter\":%d,\"owner\":%d,\"open\":%d,\"stage\":%.0f,\"budget\":%.0f,\"rerolls\":%.0f,\"generated\":%llu,\"purchased\":%llu,\"failed\":%llu,\"cards\":[",counter,owner,tray.open,Global(0x1af8938),Budget(owner),Read(Resolve(powers[owner]),0x1afa278,0),generated,purchased,failed);
+  std::fprintf(CoopBalance::trace,"{\"kind\":\"tray\",\"counter\":%d,\"owner\":%d,\"open\":%d,\"selected\":%d,\"focus\":%d,\"mx\":%.3f,\"my\":%.3f,\"w\":%.3f,\"h\":%.3f,\"click\":%d,\"stage\":%.0f,\"budget\":%.0f,\"rerolls\":%.0f,\"generated\":%llu,\"purchased\":%llu,\"failed\":%llu,\"cards\":[",counter,owner,tray.open,tray.selected,keyboard_focus[owner],observed_mx,observed_my,observed_w,observed_h,consume_click[owner],Global(0x1af8938),Budget(owner),Read(Resolve(powers[owner]),0x1afa278,0),generated,purchased,failed);
   for(size_t i=0;i<tray.cards.size();++i)std::fprintf(CoopBalance::trace,"%s%d",i?",":"",(int)tray.cards[i].object.m_i64);
   std::fprintf(CoopBalance::trace,"],\"leaked_lists\":%llu,\"body\":%.0f,\"weapon\":%d,\"mod_count\":%d,\"acquired\":[",leaked_lists,Read(Resolve(powers[owner]),0x1af96c8), (int)Field(Resolve(powers[owner]),0x1af7898).m_i64,Builtin("ds_list_size",{Field(Resolve(powers[owner]),0x1af7678)}).ToInt32());
   auto mods=Field(Resolve(powers[owner]),0x1af7678);int n=Builtin("ds_list_size",{mods}).ToInt32();for(int i=0;i<n;++i){auto v=Builtin("ds_list_find_value",{mods,RValue(i)});std::fprintf(CoopBalance::trace,"%s%d",i?",":"",v.m_Kind==VALUE_REF?(int)v.m_i64:v.ToInt32());}
-  int helpers=0,caustic=0;for(int id:OwnedIds(owner)){int asset=Asset(Resolve(id));if(asset==537||asset==538)++helpers;if(asset==327)++caustic;}
-  std::fprintf(CoopBalance::trace,"],\"shield_type\":%.0f,\"helix_helpers\":%d,\"caustic_helpers\":%d,\"bans\":[",Read(Resolve(powers[owner]),0x1af7f88),helpers,caustic);
+  int helpers=0,caustic=0,thrust_effects=0;for(auto [id,which]:owners)if(which==owner){int asset=Asset(Resolve(id));if(asset==537||asset==538)++helpers;if(asset==327)++caustic;if(asset==317)++thrust_effects;}
+  std::fprintf(CoopBalance::trace,"],\"shield_type\":%.0f,\"helix_helpers\":%d,\"caustic_helpers\":%d,\"thrust_effects\":%d,\"bans\":[",Read(Resolve(powers[owner]),0x1af7f88),helpers,caustic,thrust_effects);
   auto bans=Field(Resolve(powers[owner]),0x1af7648);n=Builtin("ds_list_size",{bans}).ToInt32();for(int i=0;i<n;++i){auto v=Builtin("ds_list_find_value",{bans,RValue(i)});std::fprintf(CoopBalance::trace,"%s%d",i?",":"",v.m_Kind==VALUE_REF?(int)v.m_i64:v.ToInt32());}
   auto enemy=Builtin("instance_find",{RValue(246),RValue(0)});auto e=Resolve((int)enemy.m_i64);
   std::fprintf(CoopBalance::trace,"],\"enemy\":%d,\"enemy_x\":%.8f,\"enemy_y\":%.8f}\n",Id(e),Read(e,nd::Fields::X,0),Read(e,nd::Fields::Y,0));
