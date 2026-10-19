@@ -26,18 +26,21 @@ Hover a hex or hold Inspect to reveal its [full description](docs/screenshots/up
 
 When a player dies, their ship leaves a beacon. After a short delay, the other
 player can stay near it for three seconds to revive them. Their build is preserved.
-The arena resizes as players join, die and revive. If both players die, the run ends.
+The arena stays expanded while a teammate is down. If both players die, the run ends.
 
 ![A gold revive beacon marking a fallen teammate](docs/screenshots/beacon-revival.png)
 
 ## Installation
 
-Requires **Nova Drift 1.2.38.4 on Steam, Windows x64**. This is an experimental,
-source-only mod; the game and compiled mod files are not included.
+Requires **Nova Drift 1.2.38.4 on Steam, Windows x64**.
 
-1. Follow the [installation guide](docs/INSTALLATION.md) to build and set up your co-op copy.
-2. Open `PlayCoop.cmd` in `%USERPROFILE%\Games\NovaDriftCoop`.
-3. Start a **fresh run**. The second ship joins automatically.
+1. Download the Windows ZIP from [Releases](https://github.com/murlock1000/novadrift-coop/releases) and extract it.
+2. Run `InstallCoop.cmd`. It finds your Steam copy and creates a separate co-op installation.
+3. Open `PlayCoop.cmd` in `%USERPROFILE%\Games\NovaDriftCoop` and start a **fresh run**.
+
+No compiler or WSL is needed. The installer downloads the mod loader; the game
+is not included. See [installation](docs/INSTALLATION.md) for custom paths, updates
+or building from source.
 
 For online play, follow the [Steam Remote Play setup](README.RemotePlay.md), then
 open `PlayRemoteCoop.cmd` and invite your friend. Steam shows the session as **Spacewar**.
@@ -54,7 +57,7 @@ Your original Steam installation and saves stay separate from the co-op copy.
 | Inspect an upgrade | Hover its hex | Hold O |
 | Choose an upgrade | Left click | N |
 
-Press **F6** to configure P2. **Escape** pauses the game for both players.
+Press **F6** to configure either player, or open `ConfigureControls.cmd`. **Escape** pauses the game for both players.
 See [all controls](docs/CONTROLS.md) for rerolls, constructs and controller mappings.
 
 Initial weapon, shield and body choices use the original selection screen.

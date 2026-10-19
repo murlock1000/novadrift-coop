@@ -1,5 +1,14 @@
 # Controls
 
+Press **F6** in-game or open **ConfigureControls.cmd**, then select **Player 1**
+or **Player 2**. Save applies the selected player's profile. Both players can
+rebind keyboard/mouse buttons, choose directional or tank steering, and select
+an XInput controller slot, buttons and deadzone. Use separate controller slots.
+
+P1 also has **Aim with mouse**. Leave it enabled for the original mouse setup;
+disable it for keyboard or controller steering. Until you save a P1 profile,
+P1 uses the copied game's controls. P2's existing profile remains compatible.
+
 ## Player 1 · red
 
 Mouse aims, left mouse button thrusts, and right mouse button fires. These are
@@ -30,11 +39,13 @@ controls appear in the strip.
 Movement keys browse upgrades while P2's strip is open. Directional steering in
 combat turns toward the pressed direction and retains native momentum.
 
-F6 pauses play and opens the editor. `ConfigureP2.cmd` opens it separately.
+F6 pauses play and opens the editor. `ConfigureControls.cmd` opens it separately; `ConfigureP2.cmd` remains an alias.
 Choose directional/tank steering, rebind keys or configure controller mappings.
-Settings live in `runtime\p2-controls.ini`. P2 keyboard bindings take priority
+Profiles live in `runtime\p1-controls.ini` and `runtime\p2-controls.ini`. P2 keyboard bindings take priority
 over conflicting P1 keyboard alternatives; P1's mouse remains available.
-Physical controller hardware has not been tested.
+Physical controller hardware has not been tested. P1's original starter/menu
+bindings still apply on the native full-screen menus; the compact combat trays
+use the configured controls.
 
 ## Playing together
 
@@ -44,6 +55,8 @@ normal physics, remains vulnerable, and uses its controls for the strip; the
 teammate can keep fighting. Escape remains a shared pause.
 
 Both HUDs use native health, shield and status rendering with red/gold accents.
+Upgrade names use the native heading font in white; counts use the native small
+font in gray. Player color stays on the selection outlines.
 Control hints fade. Initial weapon, shield and body selections use the native
 screen; combat upgrades use the compact strips. The native upgrade key also
 opens a compact strip during combat. Obsolete single-player upgrade prompts

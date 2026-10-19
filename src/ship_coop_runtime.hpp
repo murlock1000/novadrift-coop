@@ -11,7 +11,9 @@ void Tick(){
  auto now=GetTickCount64();double seconds=last_tick?std::clamp((now-last_tick)/1000.0,0.0,.05):0;last_tick=now;
  if(!ready||joining||ndship::lifecycle::IsTearingDown())return;
  auto controller=Resolve(controller_id);const bool simulation_active=controller&&Read(controller,0x1b004b8,1)==0&&!ndship::upgrade::SessionActive()&&Builtin("window_has_focus").ToBoolean();
- CoopBalance::AdvanceZoom(simulation_active?seconds:0);
+ // A downed teammate still occupies the arena: keep its death point reachable.
+ const bool beacon_pending=(Living(1)||Living(2))&&(rescues[1].down||rescues[2].down);
+ CoopBalance::AdvanceZoom(simulation_active?seconds:0,beacon_pending);
  if(!simulation_active||Read(controller,0x1af7718,0)!=0||(qa_mode&&!command.rescue_mode))return;
  const bool alive1=Living(1),alive2=Living(2);if(alive1==alive2)return;
  const int down=alive1?2:1,partner=alive1?1:2;auto ship=Resolve(ships[partner]);auto& rescue=rescues[down];
@@ -31,22 +33,23 @@ void Draw(void* self,double width,double height){
   x=std::clamp(x,24.0,width-24);y=std::clamp(y,24.0,height-70);
   const double scale=std::min(width/2400.0,height/1350.0);
   const double radius=ndship::flow::Rescue::Radius*width/vw,pulse=.78+.18*std::sin(GetTickCount64()/220.0);
-  // The range/progress ring sits outside a covering ship's shield, so the
-  // beacon remains readable while a teammate is actually reviving it.
-  p.Call("draw_set_color",{RValue(ndship::hud::PlayerColor(owner))});p.Call("draw_set_alpha",{RValue(pulse)});
-  for(int i=0;i<2;++i)p.Call("draw_circle",{RValue(x),RValue(y),RValue(radius+i*scale),RValue(true)});
-  static int sprite=-2;if(sprite==-2)sprite=Builtin("asset_get_index",{RValue("sSelectaWhite")}).ToInt32();
-  if(sprite>=0){double w=Builtin("sprite_get_width",{RValue(sprite)}).ToDouble(),h=Builtin("sprite_get_height",{RValue(sprite)}).ToDouble();
-   double ox=Builtin("sprite_get_xoffset",{RValue(sprite)}).ToDouble(),oy=Builtin("sprite_get_yoffset",{RValue(sprite)}).ToDouble(),s=64*scale/std::max(w,h);
-   p.Call("draw_sprite_ext",{RValue(sprite),RValue(0),RValue(x-(w/2-ox)*s),RValue(y-(h/2-oy)*s),RValue(s),RValue(s),RValue(0),RValue(ndship::hud::PlayerColor(owner)),RValue(pulse)});
-  }
-  p.Call("draw_line_width",{RValue(x-10*scale),RValue(y),RValue(x+10*scale),RValue(y),RValue(3*scale)});
-  p.Call("draw_line_width",{RValue(x),RValue(y-10*scale),RValue(x),RValue(y+10*scale),RValue(3*scale)});
-  p.Call("draw_set_alpha",{RValue(1.0)});
-  const int parts=(int)std::floor(rescue.Fraction()*40);
-  for(int i=0;i<parts;++i){double a=(-90+i*9)*3.141592653589793/180,b=(a+8*3.141592653589793/180);double r=radius+7*scale;
-   p.Call("draw_line_width",{RValue(x+std::cos(a)*r),RValue(y+std::sin(a)*r),RValue(x+std::cos(b)*r),RValue(y+std::sin(b)*r),RValue(5*scale)});
-  }
+  // Native upgrade/construct artwork supplies the outline, glow and beacon.
+  // Filling the native hex shows revival progress without hand-drawn geometry.
+  struct Art {int sprite=-1;double w=0,h=0,ox=0,oy=0;};
+  static std::map<std::string,Art> art;
+  auto draw=[&](const char* name,double diameter,int tint,double opacity,double fraction=1.0){
+   auto [it,inserted]=art.try_emplace(name);auto& a=it->second;
+   if(inserted){a.sprite=Builtin("asset_get_index",{RValue(name)}).ToInt32();if(a.sprite>=0){a.w=Builtin("sprite_get_width",{RValue(a.sprite)}).ToDouble();a.h=Builtin("sprite_get_height",{RValue(a.sprite)}).ToDouble();a.ox=Builtin("sprite_get_xoffset",{RValue(a.sprite)}).ToDouble();a.oy=Builtin("sprite_get_yoffset",{RValue(a.sprite)}).ToDouble();}}
+   if(a.sprite<0||a.w<=0||a.h<=0||fraction<=0)return;
+   const double s=diameter/std::max(a.w,a.h);
+   if(fraction<1){double cut=a.h*(1-fraction);p.Call("draw_sprite_part_ext",{RValue(a.sprite),RValue(0),RValue(0),RValue(cut),RValue(a.w),RValue(a.h-cut),RValue(x-a.w*s/2),RValue(y-a.h*s/2+cut*s),RValue(s),RValue(s),RValue(tint),RValue(opacity)});}
+   else p.Call("draw_sprite_ext",{RValue(a.sprite),RValue(0),RValue(x-(a.w/2-a.ox)*s),RValue(y-(a.h/2-a.oy)*s),RValue(s),RValue(s),RValue(0),RValue(tint),RValue(opacity)});
+  };
+  const int accent=ndship::hud::PlayerColor(owner);
+  draw("sSelectaPulse",radius*2.16,accent,.10+.10*pulse);
+  draw("sSelectaPulse",radius*2.16,accent,.50,rescue.Fraction());
+  draw("sSelectaWhite",radius*2.16,accent,pulse);
+  draw("sHexTacticalBeacon",104*scale,0xffffff,.90);
   auto& visual=visuals[owner];++visual.frames;visual.x=x;visual.y=y;visual.radius=radius;
  }
  p.Call("draw_set_color",{color});p.Call("draw_set_alpha",{alpha});

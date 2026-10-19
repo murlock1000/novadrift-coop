@@ -20,6 +20,7 @@ public static class NovaWindow {
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint process);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
  [DllImport("user32.dll")] public static extern bool IsHungAppWindow(IntPtr hwnd);
+ [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd,int command);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -39,7 +40,7 @@ public static class NovaWindow {
   uint current=GetCurrentThreadId(); bool attached=false;
   try {
    if(current!=foreground) attached=AttachThreadInput(current,foreground,true);
-   ShowWindow(hwnd,9); SetForegroundWindow(hwnd);
+   if(IsIconic(hwnd))ShowWindow(hwnd,9); SetForegroundWindow(hwnd);
   } finally {if(attached) AttachThreadInput(current,foreground,false);}
   return GetForegroundWindow()==hwnd;
  }

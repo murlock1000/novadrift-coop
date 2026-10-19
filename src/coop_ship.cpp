@@ -34,6 +34,8 @@ namespace {
 namespace Trays {bool Busy();bool IsOpen(int);bool BlocksInput(int);void Reset();void Capture(void*,const char*);void Tick();void Draw(void*,double,double);void Trace(int);}
 YYTKInterface* api=nullptr; AurieModule* module_self=nullptr; nd::Access access{};
 TRoutine engine_keyboard_check=nullptr;
+ndship::config::LiveProfile p1_controls;bool p1_custom=false;
+std::unordered_map<int,RValue> p1_input;
 std::filesystem::path root; FILE* log_file=nullptr; FILE* telemetry=nullptr; FILE* performance=nullptr; FILE* presentation=nullptr;
 unsigned long long marker_draws[3]{},native_rect_hidden=0,hud_frames=0;
 std::unordered_set<int> hidden_tutorial_effects;
@@ -67,7 +69,7 @@ int upgrade_hint_owner=0,ui_primary=1;bool upgrade_was_open=false;
 void ResetNativeUI(){hidden_tutorial_effects.clear();p2_ui_valid=false;ui_primary=1;hint_until[1]=hint_until[2]=upgrade_hint_until=0;upgrade_was_open=false;upgrade_hint_owner=0;}
 double HintOpacity(ULONGLONG until,ULONGLONG now){return until>now?std::min(1.0,(until-now)/1000.0):0.0;}
 std::string last_commands;
-struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0,deferred_upgrade=0,mutate_beacon=0; } command;
+struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0,deferred_upgrade=0,mutate_beacon=0,beacon_edge=0; } command;
 void Log(const char* t){if(log_file){std::fprintf(log_file,"[%llu] %s\n",GetTickCount64(),t);std::fflush(log_file);}}
 bool Readable(std::uintptr_t p,std::size_t n){MEMORY_BASIC_INFORMATION m{};return p>=0x10000&&p<0x7fffffffffffULL&&n<0x10000&&VirtualQuery((void*)p,&m,sizeof m)&&m.State==MEM_COMMIT&&!(m.Protect&(PAGE_NOACCESS|PAGE_GUARD))&&p+n<=(std::uintptr_t)m.BaseAddress+m.RegionSize;}
 int Id(void* p){return p&&Readable((std::uintptr_t)p,0xc8)&&*(int*)((char*)p+0x7c)==1?*(int*)((char*)p+0xbc):-1;}
@@ -84,8 +86,9 @@ RValue Ref(int id){ RValue r; r.m_Kind=VALUE_REF;r.m_i64=0x0400000100000000ULL|(
 RValue Builtin(const char* name,std::vector<RValue> args={},void* self=nullptr){RValue out;auto status=api->CallBuiltinEx(out,name,(CInstance*)self,(CInstance*)self,args);if(!AurieSuccess(status)){char t[200];std::snprintf(t,sizeof t,"builtin %s failed %s",name,AurieStatusToString(status));Log(t);}return out;}
 int Owner(void* p){if(!p)return 0;auto found=owners.find(Id(p));if(found!=owners.end())return found->second;return 0;}
 void Tag(void* p,int owner){int id=Id(p);if(owner>0&&id>=100000){owners[id]=owner;ndship::RegisterOwnedInstance(p,owner,id);}}
-nd::RValue* GlobalRead(void* object,int field){if(object==globals&&ndship::active_owner==2){auto it=overlay.find(field);if(it!=overlay.end())return (nd::RValue*)&it->second;}return original_global_read(object,field);}
-nd::RValue* GlobalWrite(void* object,int field){if(object==globals&&ndship::active_owner==2){auto it=overlay.find(field);if(it!=overlay.end())return (nd::RValue*)&it->second;}return original_global_write(object,field);}
+bool P1InputActive(){return p1_custom&&!ndship::upgrade::SessionActive()&&Read(Resolve(controller_id),0x1b004b8,1)==0&&Read(Resolve(controller_id),0x1af7718,0)==0;}
+nd::RValue* GlobalRead(void* object,int field){if(object==globals&&ndship::active_owner==1&&P1InputActive()){auto it=p1_input.find(field);if(it!=p1_input.end())return (nd::RValue*)&it->second;}if(object==globals&&ndship::active_owner==2){auto it=overlay.find(field);if(it!=overlay.end())return (nd::RValue*)&it->second;}return original_global_read(object,field);}
+nd::RValue* GlobalWrite(void* object,int field){if(object==globals&&ndship::active_owner==1&&P1InputActive()){auto it=p1_input.find(field);if(it!=p1_input.end())return (nd::RValue*)&it->second;}if(object==globals&&ndship::active_owner==2){auto it=overlay.find(field);if(it!=overlay.end())return (nd::RValue*)&it->second;}return original_global_write(object,field);}
 void SetOverlay(std::uintptr_t cell,double value){overlay[access.id(cell)]=RValue(value);}
 void CopyOverlay(std::uintptr_t cell){int field=access.id(cell);overlay[field]=*(RValue*)original_global_read(globals,field);}
 int UIPos(){auto ui=Builtin("instance_find",{RValue(828),RValue(0)});int id=ui.m_Kind==VALUE_REF?(int)ui.m_i64:-1;return (int)Read(Resolve(id),0x1afa238,-9);}
@@ -121,7 +124,7 @@ void CommandsRead(bool startup=false){
  Commands c;std::istringstream lines(text);std::string line;
  while(std::getline(lines,line)){std::replace(line.begin(),line.end(),'=',' ');std::istringstream e(line);std::string key;int value;if(!(e>>key>>value))continue;
  #define KEY(k) if(key==#k)c.k=value;
- KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy) KEY(deferred_upgrade) KEY(mutate_beacon)
+ KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy) KEY(deferred_upgrade) KEY(mutate_beacon) KEY(beacon_edge)
  #undef KEY
  }
  if(qa_mode&&api&&c.engine_key!=command.engine_key){
@@ -217,7 +220,7 @@ constexpr const char* InputBuiltins[]={"gamepad_is_connected","gamepad_axis_valu
 TRoutine original_input_builtin[10]{};
 template<int I> void InputBuiltin(RValue&r,CInstance*s,CInstance*o,int n,RValue*a){
  bool blocked=false;
- if constexpr(I<7)blocked=ndship::active_owner==2||(n>0&&a&&controls.Get().device!=ndship::config::Device::Keyboard&&a[0].ToInt32()==controls.Get().controller_slot);
+ if constexpr(I<7)blocked=(ndship::active_owner==1&&P1InputActive())||ndship::active_owner==2||(n>0&&a&&controls.Get().device!=ndship::config::Device::Keyboard&&a[0].ToInt32()==controls.Get().controller_slot);
  else blocked=ndship::active_owner==2&&ndship::upgrade::SessionActive();
  if(blocked){r=RValue(I>=8?-10000.0:0.0);return;}original_input_builtin[I](r,s,o,n,a);
 }
@@ -256,7 +259,7 @@ void CodeCallback(CodeEvent& event){
  if(obsolete_generic)++obsolete_tutorial_scope;
  {ndship::TargetScope target(attention);event.Call();}
  if(obsolete_generic){--obsolete_tutorial_scope;if(Resolve(self_id)==self){RValue hidden(false);api->SetBuiltin("visible",self,NULL_INDEX,hidden);}}
- if(asset==377&&name&&std::strstr(name,"_Step_0")){CoopFlow::Tick();Trays::Tick();}
+ if(asset==377&&name&&std::strstr(name,"_Step_0")){if(p1_custom){if(p1_controls.Get().mouse_aim)ndship::Unbind(1,741);else ndship::BindEmpty(1,741);}CoopFlow::Tick();Trays::Tick();}
  if(ready&&owner&&name){
   if(ndship::hud::IsShipVisualAsset(asset)&&std::strstr(name,"_Create_"))ndship::hud::TintShipVisual(api,self,owner);
 
@@ -269,20 +272,26 @@ void CodeCallback(CodeEvent& event){
  }
 }
 
-ndship::input::KeyboardState keyboard;
+ndship::input::KeyboardState keyboard,p1_keyboard;
 nd::Script original_held=nullptr,original_pressed=nullptr,original_released=nullptr,original_pad_held=nullptr,original_pad_pressed=nullptr,original_end_score=nullptr;
 void ReloadControls(){
  auto now=GetTickCount64();if(controls_at&&now-controls_at<1000)return;controls_at=now;
+ std::string first_error;if(p1_controls.ReloadIfChanged(root/ndship::config::PlayerOneFileName,first_error)){
+  p1_custom=true;p1_keyboard.Reset();p1_input.clear();
+  ndship::input::ConfigureInputOverlay([](std::uintptr_t cell,nd::RValue value){p1_input[access.id(cell)]=RValue(value.real);});
+  p1_input[access.id(0x1b00068)]=RValue(p1_controls.Get().mouse_aim?0:1);Log("P1 co-op control profile loaded");
+ }else if(!first_error.empty())Log(first_error.c_str());
  std::string error;if(controls.ReloadIfChanged(root/ndship::config::FileName,error)){gameplay_help=ndship::config::Help(controls.Get());menu_help=ndship::config::Help(controls.Get(),true);if(ready)hint_until[2]=GetTickCount64()+4500;keyboard.Reset();Log("P2 control profile loaded");}
  else if(!error.empty())Log(error.c_str());
 }
-void SampleKeyboard(){
- static unsigned long long sampled=~0ULL;
- auto tick=input_frame.load(std::memory_order_relaxed);if(sampled==tick)return;sampled=tick;
- keyboard.SetSelectedConstruct((int)Read(Resolve(powers[2]),0x1aee7e8,1));
- if(qa_mode&&!command.key&&!command.engine_input){keyboard.SampleBot(tick,command.thrust!=0,command.right-command.left,(command.fire||command.confirm)!=0);return;}
- if(!qa_mode&&!Builtin("window_has_focus").ToBoolean()){keyboard.Update(tick,0);return;}
- const auto& profile=controls.Get();ndship::input::ControllerFrame pad;
+void SampleKeyboard(int owner=2){
+ auto& buttons=owner==1?p1_keyboard:keyboard;
+ static unsigned long long sampled[3]={~0ULL,~0ULL,~0ULL};
+ auto tick=input_frame.load(std::memory_order_relaxed);if(sampled[owner]==tick)return;sampled[owner]=tick;
+ buttons.SetSelectedConstruct((int)Read(Resolve(powers[owner]),0x1aee7e8,1));
+ if(owner==2&&qa_mode&&!command.key&&!command.engine_input){buttons.SampleBot(tick,command.thrust!=0,command.right-command.left,(command.fire||command.confirm)!=0);return;}
+ if(!qa_mode&&!Builtin("window_has_focus").ToBoolean()){buttons.Update(tick,0);return;}
+ const auto& profile=owner==1?p1_controls.Get():controls.Get();ndship::input::ControllerFrame pad;
  if(!qa_mode&&profile.device!=ndship::config::Device::Keyboard){
   XINPUT_STATE state{};if(XInputGetState(profile.controller_slot,&state)==ERROR_SUCCESS){
    pad.connected=true;pad.x=state.Gamepad.sThumbLX/32768.0;pad.y=-state.Gamepad.sThumbLY/32768.0;
@@ -292,21 +301,27 @@ void SampleKeyboard(){
   }
  }
  auto engine_down=[](int key){
-  if(key<8||key>255||!engine_keyboard_check)return false;
+  if(key<1||key>255)return false;
+  if(key<8){int mouse=key==1?1:key==2?2:key==4?3:key==5?4:key==6?5:-1;return mouse>0&&Builtin("mouse_check_button",{RValue(mouse)}).ToBoolean();}
+  if(!engine_keyboard_check)return false;
   RValue value,arg(key);engine_keyboard_check(value,nullptr,nullptr,1,&arg);return value.ToBoolean();
  };
  auto down=[&](int key){
   if(qa_mode)return command.engine_input?engine_down(key):key==command.key;
   return (GetAsyncKeyState(key)&0x8000)!=0||engine_down(key);
  };
- if(ndship::upgrade::SessionActive())keyboard.SampleConfiguredMenu(tick,profile,down,pad);
- else keyboard.SampleConfigured(tick,profile,down,Read(Resolve(ships[2]),nd::Fields::Angle,0),pad);
+ if(ndship::upgrade::SessionActive())buttons.SampleConfiguredMenu(tick,profile,down,pad);
+ else buttons.SampleConfigured(tick,profile,down,Read(Resolve(ships[owner]),nd::Fields::Angle,0),pad);
 }
 
 nd::RValue* Input(nd::Script original,ndship::input::Edge edge,void* s,void* o,nd::RValue* r,int n,nd::RValue** a){
  if(Trays::BlocksInput(ndship::active_owner)){
   bool escape=false;for(int i=0;i<n;++i){double key=0;if(ndship::input::Numeric(a[i],key)&&key==VK_ESCAPE)escape=true;}
   if(!escape){*(RValue*)r=RValue(false);return r;}
+ }
+ if(ndship::active_owner==1&&P1InputActive()){
+  bool escape=false;for(int i=0;i<n;++i){double key=0;if(ndship::input::Numeric(a[i],key)&&key==VK_ESCAPE)escape=true;}
+  if(!escape){SampleKeyboard(1);*(RValue*)r=RValue(p1_keyboard.EvaluateButtonHelper(n,a,edge));return r;}
  }
  if(ndship::active_owner!=2){
   if(ready&&ndship::active_owner==1&&!ndship::upgrade::SessionActive()&&!command.mutate_sharing){
@@ -323,8 +338,8 @@ nd::RValue* Input(nd::Script original,ndship::input::Edge edge,void* s,void* o,n
 nd::RValue* Held(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){return Input(original_held,ndship::input::Edge::Held,s,o,r,n,a);}
 nd::RValue* Pressed(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){return Input(original_pressed,ndship::input::Edge::Pressed,s,o,r,n,a);}
 nd::RValue* Released(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){return Input(original_released,ndship::input::Edge::Released,s,o,r,n,a);}
-nd::RValue* PadHeld(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(ndship::active_owner==2){*(RValue*)r=RValue(false);return r;}return original_pad_held(s,o,r,n,a);}
-nd::RValue* PadPressed(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(ndship::active_owner==2){*(RValue*)r=RValue(false);return r;}return original_pad_pressed(s,o,r,n,a);}
+nd::RValue* PadHeld(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(ndship::active_owner==2||(ndship::active_owner==1&&P1InputActive())){*(RValue*)r=RValue(false);return r;}return original_pad_held(s,o,r,n,a);}
+nd::RValue* PadPressed(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(ndship::active_owner==2||(ndship::active_owner==1&&P1InputActive())){*(RValue*)r=RValue(false);return r;}return original_pad_pressed(s,o,r,n,a);}
 nd::RValue* EndScore(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
  int owner=ndship::active_owner;int partner=owner==2?1:2;
  if(owner>=1&&owner<=2&&Asset(s)==603&&Id(s)==ships[owner]&&Resolve(ships[partner])){Log("co-op ship death; surviving partner keeps shared world running");*(RValue*)r=RValue(0.0);return r;}return original_end_score(s,o,r,n,a);
@@ -354,6 +369,7 @@ void Stimuli(){
  if(command.upgrade){int owner=command.upgrade;command.upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x357de0,c);}}
  if(command.deferred_upgrade){int owner=command.deferred_upgrade;command.deferred_upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x358560,c);}}
  if(command.damage){int owner=command.owner;auto b=Resolve(powers[owner]);if(b){access.set(b,nd::Fields::Hull,std::max(1.0,Read(b,nd::Fields::Hull,100)-command.damage));access.set(b,0x1af7fd8,std::max(0.0,Read(b,0x1af7fd8,0)-command.damage));}command.damage=0;}
+ if(command.beacon_edge>=1&&command.beacon_edge<=2){int owner=command.beacon_edge;command.beacon_edge=0;if(auto ship=Resolve(ships[owner])){access.set(ship,nd::Fields::X,Global(0x1af7428)+Global(0x1af7468)*(owner==2?.03:.97));access.set(ship,nd::Fields::Y,Global(0x1af74a8)+Global(0x1af7418)*.5);access.set(ship,nd::Fields::HSpeed,0);access.set(ship,nd::Fields::VSpeed,0);}}
  if(command.kill){int owner=command.kill;command.kill=0;auto b=Resolve(powers[owner]);if(b){access.set(b,0x1af7f98,0);access.set(b,nd::Fields::Hull,0);}}
  if(command.tray_enemy){command.tray_enemy=0;ndship::OwnerScope world(0);auto enemy=Builtin("instance_create_depth",{RValue(Global(0x1af7428)+100),RValue(Global(0x1af74a8)+100),RValue(0.0),RValue(252)});auto e=Resolve((int)enemy.m_i64);if(e){access.set(e,nd::Fields::HSpeed,1);access.set(e,nd::Fields::VSpeed,.5);}}
  if(command.native_augment>0){int asset=command.native_augment,owner=command.owner;command.native_augment=0;ndship::OwnerScope scope(owner);auto ship=Resolve(ships[owner]);nd::RValue args[4]{};args[0].real=Read(ship,nd::Fields::X,0);args[1].real=Read(ship,nd::Fields::Y,0);args[2].kind=15;args[2].integer=0x0100000000000000ULL|(unsigned)asset;args[3].kind=5;nd::RValue* argv[]={args,args+1,args+2,args+3};nd::RValue out{};out.kind=5;((nd::Script)(access.base+0x3a2d60))(ship,ship,&out,4,argv);}

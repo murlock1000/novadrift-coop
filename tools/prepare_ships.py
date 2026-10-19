@@ -61,6 +61,7 @@ shutil.copy2(ROOT/'game/NovaDrift.exe', exe)
 subprocess.run([str(ROOT/'local/deps-research/binaries/v2.0.2/AuriePatcher.exe'),
                 win(exe), win(runtime/'mods/AurieCore.dll'), 'install'], check=True)
 (base/'PlayCoop.cmd').write_bytes(b'@echo off\r\ncall "%~dp0runtime\\PlayCoop.cmd" %*\r\n')
+(base/'ConfigureControls.cmd').write_bytes(b'@echo off\r\n"%~dp0runtime\\NovaDriftP2Controls.exe"\r\n')
 (base/'ConfigureP2.cmd').write_bytes(b'@echo off\r\n"%~dp0runtime\\NovaDriftP2Controls.exe"\r\n')
 for name in ('README.md','README.RemotePlay.md','dependencies.json'):
     shutil.copy2(ROOT/name,base/name)

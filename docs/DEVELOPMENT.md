@@ -73,6 +73,7 @@ python3 tools/qa_ships.py --polish
 python3 tools/qa_ships.py --trays
 python3 tools/qa_ships.py --overlays
 python3 tools/qa_ships.py --starter-bank
+python3 tools/qa_ships.py --dual-controls
 python3 tools/qa_launcher.py
 python3 tools/qa_launcher.py --remote-wrapper
 ```
@@ -98,7 +99,20 @@ The balance integration suite is `python3 tools/qa_ships.py --balance`; use a
 separate owned QA installation as described in [BALANCE.md](BALANCE.md).
 
 `--overlays` uses Pillow and a foreground Windows game client to check actual
-owner-colored beacon pixels, native upgrade-key/deferred requests for living
+owner-colored native beacon artwork pixels, native upgrade-key/deferred requests for living
 and downed ships, both compact strips, Inspect, and shared pause. It captures
 only the verified game's client area. `--overlays --mutation-beacon` deliberately
 hides the beacon and must fail the pixel assertion.
+
+## Prebuilt release
+
+Build the ship DLL, launcher/sandbox, control editor and Steam helper first.
+`python3 tools/make_release.py --version VERSION` packages only explicit mod
+artifacts and documentation under ignored `local/releases/`. The Windows
+installer validates package/dependency checksums and the original game build,
+rejects overlapping or unowned destinations, and patches only its owned copy.
+After committing, `python3 tools/package_sources.py --version VERSION` adds
+the committed project and pinned upstream source trees to a companion archive.
+Upload the compiled ZIP, checksums and matching source archive to the same
+GitHub release. Source archives must include the pinned Aurie, YYToolkit and
+SDK source trees with their license notices.

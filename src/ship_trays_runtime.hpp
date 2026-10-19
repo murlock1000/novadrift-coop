@@ -139,7 +139,7 @@ void Toggle(int owner){
 }
 // Edges are sampled once on the shared Controller step. Engine keyboard state
 // includes Steam Remote Play input; XInput uses the configured guest slot.
-unsigned previous_bits=0;
+unsigned previous_bits[3]{};
 bool BlocksInput(int owner){return IsOpen(owner)||(owner>=1&&owner<=2&&consume_confirm[owner]);}
 bool KeyDown(int key){
  if(key<1||key>255)return false;
@@ -152,23 +152,23 @@ void Tick(){
  if(!ready||joining||transaction||ndship::lifecycle::IsTearingDown())return;
  auto controller=Resolve(controller_id);if(!controller)return;
  for(int owner=1;owner<=2;++owner)if(!HasShip(owner))trays[owner]=Tray{};
- const auto& profile=controls.Get();unsigned pad=0;double axis=0,axis_x=0;
- if(!qa_mode&&profile.device!=ndship::config::Device::Keyboard){XINPUT_STATE p{};if(XInputGetState(profile.controller_slot,&p)==ERROR_SUCCESS){pad=p.Gamepad.wButtons;axis=p.Gamepad.sThumbLY/32768.0;axis_x=p.Gamepad.sThumbLX/32768.0;if(p.Gamepad.bRightTrigger>30)pad|=ndship::config::RightTrigger;if(p.Gamepad.bLeftTrigger>30)pad|=ndship::config::LeftTrigger;}}
- auto action=[&](ndship::config::Action a){return (profile.device!=ndship::config::Device::Controller&&KeyDown(profile.Key(a)))||(pad&profile.Pad(a))!=0;};
- unsigned bits=(KeyDown(VK_MBUTTON)?1u:0u)|(action(ndship::config::Action::Upgrade)?2u:0u)|(action(ndship::config::Action::Fire)?4u:0u)|((action(ndship::config::Action::Up)||axis>.55)?8u:0u)|((action(ndship::config::Action::Down)||axis<-.55)?16u:0u)|(action(ndship::config::Action::Stabilize)?32u:0u)|(action(ndship::config::Action::Deploy)?64u:0u)|(action(ndship::config::Action::Construct2)?128u:0u)|(Builtin("mouse_check_button",{RValue(1)}).ToBoolean()?256u:0u)|((action(ndship::config::Action::Left)||axis_x<-.55)?512u:0u)|((action(ndship::config::Action::Right)||axis_x>.55)?1024u:0u);
- unsigned pressed=bits&~previous_bits;previous_bits=bits;if(!(bits&256))consume_confirm[1]=false;if(!(bits&4))consume_confirm[2]=false;
  if(Read(controller,0x1b004b8,1)!=0||Read(controller,0x1af7718,0)!=0||!Builtin("window_has_focus").ToBoolean()||ndship::upgrade::SessionActive()||CountUI()!=0||Read(controller,ndship::build::ControllerCanLevel.cell,0)==0)return;
  double width=Builtin("display_get_gui_width").ToDouble(),height=Builtin("display_get_gui_height").ToDouble();
  double mx=Builtin("device_mouse_x_to_gui",{RValue(0)}).ToDouble(),my=Builtin("device_mouse_y_to_gui",{RValue(0)}).ToDouble();
  for(int owner=1;owner<=2;++owner){
-  auto& tray=trays[owner];const bool requested=tray.requested;bool opening=requested||(pressed&(owner==1?1:2));tray.requested=false;
+ const auto& profile=owner==1?p1_controls.Get():controls.Get();unsigned pad=0;double axis=0,axis_x=0;
+ if(!qa_mode&&profile.device!=ndship::config::Device::Keyboard){XINPUT_STATE p{};if(XInputGetState(profile.controller_slot,&p)==ERROR_SUCCESS){pad=p.Gamepad.wButtons;axis=p.Gamepad.sThumbLY/32768.0;axis_x=p.Gamepad.sThumbLX/32768.0;if(p.Gamepad.bRightTrigger>30)pad|=ndship::config::RightTrigger;if(p.Gamepad.bLeftTrigger>30)pad|=ndship::config::LeftTrigger;}}
+ auto action=[&](ndship::config::Action a){return (profile.device!=ndship::config::Device::Controller&&KeyDown(profile.Key(a)))||(pad&profile.Pad(a))!=0;};
+ unsigned bits=((owner==1&&!p1_custom?KeyDown(VK_MBUTTON):action(ndship::config::Action::Upgrade))?2u:0u)|(action(ndship::config::Action::Fire)?4u:0u)|((action(ndship::config::Action::Up)||axis>.55)?8u:0u)|((action(ndship::config::Action::Down)||axis<-.55)?16u:0u)|(action(ndship::config::Action::Stabilize)?32u:0u)|(action(ndship::config::Action::Deploy)?64u:0u)|(action(ndship::config::Action::Construct2)?128u:0u)|(Builtin("mouse_check_button",{RValue(1)}).ToBoolean()?256u:0u)|((action(ndship::config::Action::Left)||axis_x<-.55)?512u:0u)|((action(ndship::config::Action::Right)||axis_x>.55)?1024u:0u);
+ unsigned pressed=bits&~previous_bits[owner];previous_bits[owner]=bits;if(!(bits&(owner==1&&(!p1_custom||profile.mouse_aim)?256:4)))consume_confirm[owner]=false;
+  auto& tray=trays[owner];const bool requested=tray.requested;bool opening=requested||(pressed&2);tray.requested=false;
   if(qa_mode&&command.tray==owner){command.tray=0;opening=true;}
-  bool chip=owner==1&&mx<width*.24&&my>height-110*height/1350&&my<height-60*height/1350;
+  bool chip=owner==1&&(!p1_custom||profile.mouse_aim)&&mx<width*.24&&my>height-110*height/1350&&my<height-60*height/1350;
   if(chip&&(pressed&256))opening=true;
   if(opening){if(!requested||!tray.open)Toggle(owner);continue;}
   if(!tray.open)continue;
   tray.inspect=false;
-  if(owner==1){
+  if(owner==1&&(!p1_custom||profile.mouse_aim)){
    if(Builtin("mouse_wheel_up").ToBoolean())tray.selected=(tray.selected+(int)tray.cards.size()-1)%(int)tray.cards.size();
    if(Builtin("mouse_wheel_down").ToBoolean())tray.selected=(tray.selected+1)%(int)tray.cards.size();
    auto g=Layout(owner,width,height);double scale=std::min(width/2400.0,height/1350.0);
@@ -204,38 +204,47 @@ void NativeBox(ndship::hud::detail::Painter& p,double x,double y,double w,double
  int sprite=Art("sTutorialBox");if(sprite<0)return;auto size=Size(sprite);double sx=w/size.w,sy=h/size.h;
  p.Call("draw_sprite_ext",{RValue(sprite),RValue(0),RValue(x+size.ox*sx),RValue(y+size.oy*sy),RValue(sx),RValue(sy),RValue(0),RValue(0xffffff),RValue(1.0)});
 }
-std::string Binding(ndship::config::Action action){const auto& profile=controls.Get();return profile.device==ndship::config::Device::Controller?ndship::config::PadLabel(profile.Pad(action)):ndship::config::KeyLabel(profile.Key(action));}
+std::string Binding(ndship::config::Action action,int owner=2){const auto& profile=owner==1?p1_controls.Get():controls.Get();return profile.device==ndship::config::Device::Controller?ndship::config::PadLabel(profile.Pad(action)):ndship::config::KeyLabel(profile.Key(action));}
 void Draw(void* self,double width,double height){
  if(!ready||ndship::upgrade::SessionActive()||Read(Resolve(controller_id),0x1b004b8,1)!=0||Read(Resolve(controller_id),0x1af7718,0)!=0)return;
- ndship::hud::detail::Painter p(api,(CInstance*)self);auto color=p.Call("draw_get_color"),alpha=p.Call("draw_get_alpha"),align=p.Call("draw_get_halign"),valign=p.Call("draw_get_valign");p.Call("draw_set_valign",{RValue(0)});
- const double scale=std::min(width/2400.0,height/1350.0);int font=p.Call("draw_get_font").ToInt32();p.SetLayoutFont(font);double text_scale=font<0?2*scale:1;
+ ndship::hud::detail::Painter p(api,(CInstance*)self);auto color=p.Call("draw_get_color"),alpha=p.Call("draw_get_alpha"),saved_font=p.Call("draw_get_font"),align=p.Call("draw_get_halign"),valign=p.Call("draw_get_valign");p.Call("draw_set_valign",{RValue(0)});
+ const double scale=std::min(width/2400.0,height/1350.0);
+ // Match native descriptions (fontHeading/white) and menu counters (fontSmall).
+ // These fonts already include the game's GUI/language/accessibility scaling.
+ const int font=(int)Global(0x1b059b8),heading=(int)Global(0x1b059c8);
+ const int text_color=0xffffff,secondary=0xbfbfbf;
+ const double text_scale=font<0?2*scale:1;
+ auto select_font=[&](int value){p.Call("draw_set_font",{RValue(value)});p.SetLayoutFont(value);};
+ select_font(font);
  for(int owner=1;owner<=2;++owner){
   if(!Eligible(owner)||Budget(owner)<=0)continue;
   int accent=ndship::hud::PlayerColor(owner);double chipx=owner==1?40*scale:width-600*scale;
   auto& tray=trays[owner];
-  if(!tray.open)p.FittedText(chipx,height-100*scale,"+ "+std::to_string((int)Budget(owner))+"  "+(owner==1?"Mouse middle":Binding(ndship::config::Action::Upgrade)),accent,text_scale,520*scale);if(!tray.open||tray.cards.empty())continue;
+  if(!tray.open)p.FittedText(chipx,height-100*scale,"+ "+std::to_string((int)Budget(owner))+"  "+(owner==1&&!p1_custom?"Mouse middle":Binding(ndship::config::Action::Upgrade,owner)),text_color,text_scale,520*scale);if(!tray.open||tray.cards.empty())continue;
   auto g=Layout(owner,width,height);
   for(int index=g.first;index<std::min((int)tray.cards.size(),g.first+5);++index){double x=g.x+50*scale+(index-g.first)*g.row;
    Sprite(p,tray.cards[index].sprite,x,g.y,68*scale,0xffffff);
    if(index==tray.selected){int frame=Art("sSelectaWhite");auto a=Size(tray.cards[index].sprite),b=Size(frame);Sprite(p,frame,x,g.y,136*scale*std::max(b.w,b.h)/std::max(a.w,a.h),accent,.85);}
   }
   auto& card=tray.cards[tray.selected];
-  p.FittedText(g.x,g.y+48*scale,card.title,accent,text_scale*.85,g.w);
+  select_font(heading);
+  p.FittedText(g.x,g.y+48*scale,card.title,text_color,heading<0?text_scale:.72,g.w);
+  select_font(font);
   const auto rerolls=std::to_string((int)Read(Resolve(powers[owner]),0x1afa278,0));bool researcher=Read(Resolve(powers[owner]),0x1af96c8,0)==8;
-  if(owner==1){
+  if(owner==1&&(!p1_custom||p1_controls.Get().mouse_aim)){
    double hint=HintOpacity(tray.hint_until,GetTickCount64());
-   if(hint>0)p.FittedText(g.x,g.y+84*scale,"Scroll / hover",accent,text_scale*.65,g.w*.4,0,hint);
-   p.FittedText(g.x+g.w*.45,g.y+84*scale,"Reroll "+rerolls,accent,text_scale*.65,g.w*.24);
-   if(researcher)p.FittedText(g.x+g.w*.75,g.y+84*scale,"Banish",accent,text_scale*.65,g.w*.25);
+   if(hint>0)p.FittedText(g.x,g.y+84*scale,"Scroll / hover",secondary,text_scale,g.w*.4,0,hint);
+   p.FittedText(g.x+g.w*.45,g.y+84*scale,"Reroll "+rerolls,secondary,text_scale,g.w*.24);
+   if(researcher)p.FittedText(g.x+g.w*.75,g.y+84*scale,"Banish",secondary,text_scale,g.w*.25);
   }else{
-   std::string footer=Binding(ndship::config::Action::Deploy)+" reroll "+rerolls;
-   if(researcher)footer+=" | "+Binding(ndship::config::Action::Construct2)+" banish";
-   p.FittedText(g.x+g.w*.45,g.y+84*scale,footer,accent,text_scale*.65,g.w*.55);
+   std::string footer=Binding(ndship::config::Action::Deploy,owner)+" reroll "+rerolls;
+   if(researcher)footer+=" | "+Binding(ndship::config::Action::Construct2,owner)+" banish";
+   p.FittedText(g.x+g.w*.45,g.y+84*scale,footer,secondary,text_scale,g.w*.55);
    double hint=HintOpacity(tray.hint_until,GetTickCount64());
-   if(hint>0)p.FittedText(g.x,g.y+84*scale,Binding(ndship::config::Action::Fire)+" choose / "+Binding(ndship::config::Action::Formation)+" inspect",accent,text_scale*.65,g.w*.43,0,hint);
+   if(hint>0)p.FittedText(g.x,g.y+84*scale,Binding(ndship::config::Action::Fire,owner)+" choose / "+Binding(ndship::config::Action::Formation,owner)+" inspect",secondary,text_scale,g.w*.43,0,hint);
   }
   if(tray.inspect){
-   ndship::OwnerScope scope(owner);double sx=text_scale*.85,available=g.w-80*scale;
+   ndship::OwnerScope scope(owner);double sx=text_scale,available=g.w-80*scale;
    if(card.measure_width!=available||card.measure_font!=font){auto metrics=Invoke(0x206330,Resolve(powers[owner]),{RValue(g.x),RValue(g.y),RValue(card.description),RValue(0.0),RValue(available/sx),RValue(0.0),RValue(sx),RValue(sx)});card.measure_height=metrics.IsArray()?metrics[(size_t)2].ToDouble():0;card.measure_width=available;card.measure_font=font;}
    double info_height=std::min(300*scale,std::max(72*scale,card.measure_height+36*scale));
    double x=g.x,y=g.y-info_height-55*scale;
@@ -244,7 +253,7 @@ void Draw(void* self,double width,double height){
    Invoke(0x206330,Resolve(powers[owner]),{RValue(x+44*scale),RValue(y+16*scale),RValue(card.description),RValue(1.0),RValue(available/sx),RValue(0.0),RValue(sx),RValue(sx)});
   }
  }
- p.Call("draw_set_color",{color});p.Call("draw_set_alpha",{alpha});p.Call("draw_set_halign",{align});p.Call("draw_set_valign",{valign});
+ p.Call("draw_set_color",{color});p.Call("draw_set_alpha",{alpha});p.Call("draw_set_font",{saved_font});p.Call("draw_set_halign",{align});p.Call("draw_set_valign",{valign});
 }
 // Verified presentation-only entry detours; active only during a transaction.
 nd::Script presentation_original[8]{};

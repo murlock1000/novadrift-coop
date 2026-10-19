@@ -115,6 +115,9 @@ inline bool Bind(int owner, int asset_index, int instance_id) noexcept {
     detail::bindings[owner][asset_index].store(instance_id, std::memory_order_relaxed);
     return true;
 }
+inline void Unbind(int owner,int asset_index) noexcept {
+    if(owner>=0&&owner<=2&&asset_index>=0&&asset_index<1024)detail::bindings[owner][asset_index].store(0);
+}
 inline bool BindEmpty(int owner, int asset_index) noexcept {
     if (owner < 0 || owner > 2 || asset_index < 0 || asset_index >= 1024) return false;
     detail::bindings[owner][asset_index].store(-1, std::memory_order_relaxed);

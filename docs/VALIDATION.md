@@ -147,3 +147,30 @@ The proximity fixture pins and replenishes the survivor to avoid unrelated
 ambient combat ending the test. Native collision protection probes clear that
 fixture before measuring actual damage. Normal play does not replenish hull
 while reviving.
+
+## Native styling, beacon bounds and two-player controls (2026-10-19)
+
+The compact labels now explicitly select the native `fontHeading` and
+`fontSmall` resources, using white titles and gray counters. Player colors
+remain on selection outlines. The beacon uses native `sHexTacticalBeacon`,
+`sSelectaWhite` and `sSelectaPulse` artwork, with a filling hex for revive
+progress. No cross, circle or progress segments are drawn with line primitives.
+
+The expanded arena stays in place while either teammate is down. The final
+build passed the 24-check native overlay suite. The suite kills each player in an outer margin beyond the single-player
+bounds, checks the unchanged co-op scale, checks presented native-art pixels
+and revives them there with the same build.
+
+The 14-check dual-control suite passes on the final build, including a native
+restart from game over with a saved P1 profile. It checks independent rebound
+fire keys, P1 hot reload,
+P1 directional movement and compact keyboard selection, preserved P2 settings
+and shared pause. The editor self-test switches players and persists separate
+profiles. Physical controller hardware and all native starter-menu control
+combinations remain untested. P1 starter/menu controls retain the original
+game bindings; compact combat trays use the co-op profile.
+
+The prebuilt ZIP was extracted and installed by Windows PowerShell into a
+separate owned test copy. Checks exercise payload checksum rejection and
+refusal to install inside the original game. Loader/toolkit downloads are
+hash-pinned. The original Steam executable and original saves remain unchanged.

@@ -1,5 +1,5 @@
 #pragma once
-// P2 controls are independent of the game's saved P1 control settings.
+// Per-player co-op controls; the original game preferences stay separate.
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -50,6 +50,7 @@ struct Profile {
     Device device = Device::Keyboard;
     int controller_slot = 1; // XInput zero-based slot; UI labels controllers1..4.
     double deadzone = 0.22;
+    bool mouse_aim = false;
     std::array<int, ActionCount> keys = {{
         'I','J','K','L','N',0xa3,0xa1,'O','U',
         '7','8','9','0',0xbd,0xba,0xde,0xdb,0xdd,0xa5,0x76
@@ -61,6 +62,12 @@ struct Profile {
     int Key(Action action) const noexcept { return keys[static_cast<std::size_t>(action)]; }
     std::uint32_t Pad(Action action) const noexcept { return pad[static_cast<std::size_t>(action)]; }
 };
+inline Profile PlayerOneDefaults() {
+    Profile p;p.steering=Steering::Tank;p.mouse_aim=true;p.controller_slot=0;
+    p.keys={{1,'A','S','D',2,32,0xa0,'F','E','1','2','3','4','5','Q','R','W','S',0xa4,4}};
+    return p;
+}
+inline constexpr const wchar_t* PlayerOneFileName=L"p1-controls.ini";
 inline constexpr const wchar_t* FileName = L"p2-controls.ini";
 inline std::string KeyLabel(int key) {
     if(key<0)return "Unbound";
@@ -131,6 +138,7 @@ inline bool Parse(std::istream& stream, Profile& out, std::string& error) {
                 if (key == "steering") { if (value == "directional") next.steering = Steering::Directional; else if (value == "tank") next.steering = Steering::Tank; else throw 0; }
                 else if (key == "device") { if (value == "keyboard") next.device = Device::Keyboard; else if (value == "controller") next.device = Device::Controller; else if (value == "both") next.device = Device::Both; else throw 0; }
                 else if (key == "controller_slot") { next.controller_slot = std::stoi(value,&used); if (used != value.size()) throw 0; }
+                else if (key == "mouse_aim") { if(value=="1")next.mouse_aim=true;else if(value=="0")next.mouse_aim=false;else throw 0; }
                 else if (key == "deadzone") { next.deadzone = std::stod(value,&used); if (used != value.size()) throw 0; }
             } else if (section == "keys" || section == "controller") {
                 for (std::size_t i = 0; i < ActionCount; ++i) if (key == ActionNames[i]) {
@@ -150,11 +158,11 @@ inline bool Load(const std::filesystem::path& path, Profile& out, std::string& e
     return Parse(stream,out,error);
 }
 inline void Write(std::ostream& stream, const Profile& profile) {
-    stream << "; Nova Drift player 2 controls. P1 game settings are unchanged.\n"
+    stream << "; Nova Drift co-op controls. Original game preferences are unchanged.\n"
            << "; controller_slot is zero-based; key codes are Windows virtual keys.\n[controls]\nsteering="
            << (profile.steering == Steering::Tank ? "tank" : "directional") << "\ndevice="
            << (profile.device == Device::Controller ? "controller" : profile.device == Device::Both ? "both" : "keyboard")
-           << "\ncontroller_slot=" << profile.controller_slot << "\ndeadzone=" << profile.deadzone << "\n\n[keys]\n";
+           << "\nmouse_aim=" << (profile.mouse_aim?1:0) << "\ncontroller_slot=" << profile.controller_slot << "\ndeadzone=" << profile.deadzone << "\n\n[keys]\n";
     for (std::size_t i = 0; i < ActionCount; ++i) stream << ActionNames[i] << '=' << profile.keys[i] << '\n';
     stream << "\n[controller]\n";
     for (std::size_t i = 0; i < ActionCount; ++i) stream << ActionNames[i] << '=' << profile.pad[i] << '\n';

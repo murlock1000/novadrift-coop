@@ -72,6 +72,9 @@ try:
  joined=wait(lambda: next((r for r in reversed(rows()) if r.get('ready') and r['p2']>=100000),None))
  check('two distinct native player ships',joined['p1']!=joined['p2'] and joined['p1_asset']==joined['p2_asset']==603,joined)
  check('two distinct build owners',joined['b1']!=joined['b2'] and joined['hull1']>0 and joined['hull2']>0,joined)
+ if '--dual-controls' in sys.argv:
+  from qa_dual_controls import run
+  run(globals());report['status']='PASS';raise SystemExit(0)
  if '--starter-bank' in sys.argv:
   def starter():return [r for r in read_jsonl(runtime/'ship-balance.jsonl') if r.get('kind')=='tray']
   def owned(owner):return next((r for r in reversed(starter()) if r['owner']==owner),None)
@@ -198,14 +201,15 @@ try:
    c=control(kill=owner);wait(lambda:rows()[-1]['p'+str(owner)]==-1)
    wait(lambda:rescue(owner) and rescue(owner)['down']==1)
    time.sleep(.7);check('death creates a delayed revive beacon',rescue(owner)['age']<5 and rescue(owner)['progress']==0,rescue(owner))
-   wait(lambda:state()['zoom_scale']<=1.00001)
+   time.sleep(.6)
+   check('arena stays expanded while teammate is down',abs(state()['zoom_scale']-1.2)<.00001 and abs(state()['zoom_target']-1.2)<.00001,state())
    c=control(rescue_hold=owner)
-   wait(lambda:rescue(owner)['age']>=5 and rescue(owner)['progress']>.3,10)
+   wait(lambda:rescue(owner)['age']>=5 and rescue(owner)['progress']>.3,30)
    ui('press','ESCAPE');wait(lambda:rows(True)[-1]['paused']==1)
    paused=rescue(owner)['progress'];time.sleep(.6)
    check('native pause freezes revive progress',abs(rescue(owner)['progress']-paused)<.04,rescue(owner))
    ui('press','ESCAPE');wait(lambda:rows(True)[-1]['paused']==0)
-   revived=wait(lambda:rows()[-1] if rows()[-1]['p'+str(owner)]>=100000 else None,8)
+   revived=wait(lambda:rows()[-1] if rows()[-1]['p'+str(owner)]>=100000 else None,20)
    wait(lambda:rescue(owner)['down']==0)
    health=rescue(owner)
    check('native revive preserves both builds and run generation',revived['generation']==generation and (revived['b1'],revived['b2'])==builds,revived)

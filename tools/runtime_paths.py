@@ -48,7 +48,7 @@ def write_project_shortcuts(base):
     native=subprocess.check_output(['wslpath','-w',str(base)],text=True).strip()
     private=ROOT/'local/installation.env.cmd';private.parent.mkdir(parents=True,exist_ok=True)
     private.write_bytes(('if not defined NOVACOOP_INSTALL set "NOVACOOP_INSTALL='+native+'"\r\n').encode())
-    for name,target in [('PlayShips.cmd','PlayCoop.cmd'),('PlayRemoteCoop.cmd','PlayRemoteCoop.cmd'),('ConfigureP2.cmd','ConfigureP2.cmd'),('ConfigureRemotePlay.cmd','ConfigureRemotePlay.cmd')]:
+    for name,target in [('PlayShips.cmd','PlayCoop.cmd'),('PlayRemoteCoop.cmd','PlayRemoteCoop.cmd'),('ConfigureP2.cmd','ConfigureP2.cmd'),('ConfigureControls.cmd','ConfigureControls.cmd'),('ConfigureRemotePlay.cmd','ConfigureRemotePlay.cmd')]:
         content=('@echo off\r\nsetlocal\r\n'
             'if exist "%~dp0local\\installation.env.cmd" call "%~dp0local\\installation.env.cmd"\r\n'
             'if not defined NOVACOOP_INSTALL set "NOVACOOP_INSTALL=%USERPROFILE%\\Games\\NovaDriftCoop"\r\n'

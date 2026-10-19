@@ -55,8 +55,8 @@ void ScaleCamera(void* self){
  Builtin("camera_set_view_size",{camera,RValue(last_arena_width),RValue(last_arena_height)},self);
  Builtin("camera_set_view_pos",{camera,RValue(x-(last_arena_width-w)/2),RValue(y-(last_arena_height-h)/2)},self);++arena_updates;
 }
-void AdvanceZoom(double seconds){
- zoom.Target(Active()&&Living()>1?profile.arena_scale:1.0);double before=zoom.Value();zoom.Advance(seconds);
+void AdvanceZoom(double seconds,bool beacon_pending){
+ zoom.Target(Active()&&(Living()>1||beacon_pending)?profile.arena_scale:1.0);double before=zoom.Value();zoom.Advance(seconds);
  if(!Active()||std::abs(zoom.Value()-before)<1e-10||last_native_width<=0)return;
  auto controller=Resolve(controller_id);RValue camera;if(!controller||!AurieSuccess(api->GetBuiltin("view_camera",(CInstance*)controller,0,camera)))return;
  Builtin("camera_set_view_size",{camera,RValue(last_native_width),RValue(last_native_height)},controller);
