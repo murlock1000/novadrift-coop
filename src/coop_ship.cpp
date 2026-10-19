@@ -31,7 +31,8 @@ using namespace Aurie;
 using namespace YYTK;
 namespace nd=novadrift_native;
 namespace {
-namespace Trays {bool Busy();bool IsOpen(int);bool BlocksInput(int);void Reset();void Capture(void*,const char*);void Tick();void Draw(void*,double,double);void Trace(int);}
+namespace Trays {bool Busy();bool IsOpen(int);bool BlocksInput(int);void Reset();void Request(int);void Capture(void*,const char*);void Tick();void Draw(void*,double,double);void Trace(int);}
+namespace PauseBuild {void Capture(void*,const char*);void Draw(void*,double,double);nd::RValue* Owned(nd::Script,void*,void*,nd::RValue*,int,nd::RValue**);}
 YYTKInterface* api=nullptr; AurieModule* module_self=nullptr; nd::Access access{};
 TRoutine engine_keyboard_check=nullptr;
 ndship::config::LiveProfile p1_controls;bool p1_custom=false;
@@ -54,10 +55,12 @@ nd::Event original_player_create=nullptr,original_powers_create=nullptr,original
 nd::Event original_player_destroy=nullptr,original_player_step2=nullptr;
 nd::Script original_gain_level=nullptr,original_restart=nullptr;
 using CodeEvent=FunctionWrapper<bool(CInstance*,CInstance*,CCode*,RValue*,int)>;
-bool level_award_inflight=false;
+bool level_award_inflight=false,pause_stats_rendering=false;
 bool spawning_powers=false,spawning_player=false,ready=false,joining=false;
 int respawn_owner=0;
 int controller_id=-1;
+struct HealthEffect {int owner=0;double width=1;};
+std::unordered_map<int,HealthEffect> health_effects;
 ndship::config::LiveProfile controls;
 ULONGLONG controls_at=0;
 int menu_owner=1; unsigned long long generation=0,steps[3]{},shots[3]{};
@@ -67,10 +70,10 @@ std::atomic<unsigned long long> input_frame{0};
 bool p2_ui_valid=false,ui_overlay_active=false,save_native_ui=false;
 ULONGLONG hint_until[3]{},upgrade_hint_until=0;
 int upgrade_hint_owner=0,ui_primary=1;bool upgrade_was_open=false;
-void ResetNativeUI(){hidden_tutorial_effects.clear();p2_ui_valid=false;ui_primary=1;hint_until[1]=hint_until[2]=upgrade_hint_until=0;upgrade_was_open=false;upgrade_hint_owner=0;}
+void ResetNativeUI(){hidden_tutorial_effects.clear();health_effects.clear();p2_ui_valid=false;ui_primary=1;hint_until[1]=hint_until[2]=upgrade_hint_until=0;upgrade_was_open=false;upgrade_hint_owner=0;}
 double HintOpacity(ULONGLONG until,ULONGLONG now){return until>now?std::min(1.0,(until-now)/1000.0):0.0;}
 std::string last_commands;
-struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0,deferred_upgrade=0,mutate_beacon=0,beacon_edge=0,beacon_center=0,mutate_stock=0,freeze=0; } command;
+struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0,deferred_upgrade=0,mutate_beacon=0,beacon_edge=0,beacon_center=0,mutate_stock=0,freeze=0,shield_break=0,mutate_healthfx=0,mutate_pause=0,mutate_startup=0; } command;
 void Log(const char* t){if(log_file){std::fprintf(log_file,"[%llu] %s\n",GetTickCount64(),t);std::fflush(log_file);}}
 bool Readable(std::uintptr_t p,std::size_t n){MEMORY_BASIC_INFORMATION m{};return p>=0x10000&&p<0x7fffffffffffULL&&n<0x10000&&VirtualQuery((void*)p,&m,sizeof m)&&m.State==MEM_COMMIT&&!(m.Protect&(PAGE_NOACCESS|PAGE_GUARD))&&p+n<=(std::uintptr_t)m.BaseAddress+m.RegionSize;}
 int Id(void* p){return p&&Readable((std::uintptr_t)p,0xc8)&&*(int*)((char*)p+0x7c)==1?*(int*)((char*)p+0xbc):-1;}
@@ -88,7 +91,7 @@ RValue Builtin(const char* name,std::vector<RValue> args={},void* self=nullptr){
 int Owner(void* p){if(!p)return 0;auto found=owners.find(Id(p));if(found!=owners.end())return found->second;return 0;}
 void Tag(void* p,int owner){int id=Id(p);if(owner>0&&id>=100000){owners[id]=owner;ndship::RegisterOwnedInstance(p,owner,id);}}
 bool P1InputActive(){return p1_custom&&!ndship::upgrade::SessionActive()&&Read(Resolve(controller_id),0x1b004b8,1)==0&&Read(Resolve(controller_id),0x1af7718,0)==0;}
-nd::RValue* GlobalRead(void* object,int field){if(object==globals&&ndship::active_owner==1&&P1InputActive()){auto it=p1_input.find(field);if(it!=p1_input.end())return (nd::RValue*)&it->second;}if(object==globals&&ndship::active_owner==2){auto it=overlay.find(field);if(it!=overlay.end())return (nd::RValue*)&it->second;}return original_global_read(object,field);}
+nd::RValue* GlobalRead(void* object,int field){if(object==globals&&ndship::active_owner==1&&P1InputActive()){auto it=p1_input.find(field);if(it!=p1_input.end())return (nd::RValue*)&it->second;}if(object==globals&&ndship::active_owner==2){auto it=overlay.find(field);if(it!=overlay.end()){if(pause_stats_rendering){bool independent=false;for(auto f:ndship::build::IndependentGlobals)if(access.id(f.cell)==field)independent=true;if(!independent)return original_global_read(object,field);}return (nd::RValue*)&it->second;}}return original_global_read(object,field);}
 nd::RValue* GlobalWrite(void* object,int field){if(object==globals&&ndship::active_owner==1&&P1InputActive()){auto it=p1_input.find(field);if(it!=p1_input.end())return (nd::RValue*)&it->second;}if(object==globals&&ndship::active_owner==2){auto it=overlay.find(field);if(it!=overlay.end())return (nd::RValue*)&it->second;}return original_global_write(object,field);}
 void SetOverlay(std::uintptr_t cell,double value){overlay[access.id(cell)]=RValue(value);}
 void CopyOverlay(std::uintptr_t cell){int field=access.id(cell);overlay[field]=*(RValue*)original_global_read(globals,field);}
@@ -125,7 +128,7 @@ void CommandsRead(bool startup=false){
  Commands c;std::istringstream lines(text);std::string line;
  while(std::getline(lines,line)){std::replace(line.begin(),line.end(),'=',' ');std::istringstream e(line);std::string key;int value;if(!(e>>key>>value))continue;
  #define KEY(k) if(key==#k)c.k=value;
- KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy) KEY(deferred_upgrade) KEY(mutate_beacon) KEY(beacon_edge) KEY(beacon_center) KEY(mutate_stock) KEY(freeze)
+ KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy) KEY(deferred_upgrade) KEY(mutate_beacon) KEY(beacon_edge) KEY(beacon_center) KEY(mutate_stock) KEY(freeze) KEY(shield_break) KEY(mutate_healthfx) KEY(mutate_pause) KEY(mutate_startup)
  #undef KEY
  }
  if(qa_mode&&api&&c.engine_key!=command.engine_key){
@@ -200,14 +203,21 @@ void Join(){
  spawning_player=true;auto ship=Builtin("instance_create_depth",{RValue(Read(Resolve(ships[1]),nd::Fields::X)+70),RValue(Read(Resolve(ships[1]),nd::Fields::Y)),RValue(0.0),RValue(603)});spawning_player=false;
  auto p2=Resolve(ships[2]);if(p2){access.set(p2,nd::Fields::X,Read(Resolve(ships[1]),nd::Fields::X)+70);access.set(p2,nd::Fields::Y,Read(Resolve(ships[1]),nd::Fields::Y));}
  if(p2){Script(0x5fe60,dst);for(int owner=1;owner<=2;++owner){auto ship=Resolve(ships[owner]);if(ship){RValue color(ndship::hud::PlayerColor(owner));api->SetBuiltin("image_blend",(CInstance*)ship,NULL_INDEX,color);}}}
+ if(p2){double x=Read(Resolve(ships[1]),nd::Fields::X)+70,y=Read(Resolve(ships[1]),nd::Fields::Y);
+  for(auto cell:{nd::Fields::X,(std::uintptr_t)0x1af4b78})access.set(p2,cell,x);
+  for(auto cell:{nd::Fields::Y,(std::uintptr_t)0x1af4b68})access.set(p2,cell,y);
+  access.set(p2,nd::Fields::HSpeed,0);access.set(p2,nd::Fields::VSpeed,0);
+ }
  ready=p2!=nullptr;
- if(ready){hint_until[1]=hint_until[2]=GetTickCount64()+4500;SetGlobal(0x1afde48,1);}
+ if(ready){hint_until[1]=hint_until[2]=GetTickCount64()+4500;SetGlobal(0x1afde48,1);for(int owner=1;owner<=2;++owner){ndship::OwnerScope pick(owner);if(Global(0x1af8ce8)>0&&Global(0x1af8938)<4)Trays::Request(owner);}}
  if(ready)for(int owner=1;owner<=2;++owner)for(int id:OwnedIds(owner)){auto visual=Resolve(id);if(ndship::hud::IsShipVisualAsset(Asset(visual)))ndship::hud::TintShipVisual(api,(CInstance*)visual,owner);}
  if(!p2)ndship::lifecycle::TeardownOwner(2,ndship::lifecycle::Reason::JoinFailure);joining=false;Log(ready?"join complete: independent native ship/build":"join failed ship missing");
 }
 void PlayerStep(void* self,void* other){
  int owner=Owner(self);ndship::perf::Span measure(owner==2?ndship::perf::Metric::Player2Step:ndship::perf::Metric::Player1Step);ndship::OwnerScope scope(owner);++steps[owner];original_player_step(self,other);
- if(owner==1){CommandsRead();if((!qa_mode&&!ready&&steps[1]>=90&&Read(Resolve(powers[1]),0x1af7498,0)>0)||command.join||((GetAsyncKeyState(VK_F8)&1)!=0)){command.join=0;Join();}Telemetry();}
+ // Keep the native entry animation. All upgrade entry points are buffered
+ // until ready, so P1 cannot spend a starter choice before P2 is cloned.
+ if(owner==1){CommandsRead();if((!ready&&steps[1]>=90&&Read(Resolve(powers[1]),0x1af7498,0)>0)||command.join||((GetAsyncKeyState(VK_F8)&1)!=0)){command.join=0;Join();}Telemetry();}
 }
 void PlayerStep2(void* self,void* other){
  int owner=Owner(self);ndship::OwnerScope scope(owner);original_player_step2(self,other);
@@ -220,6 +230,7 @@ void Focus(RValue& r,CInstance* s,CInstance* o,int n,RValue* a){if(command.qa_fo
 constexpr const char* InputBuiltins[]={"gamepad_is_connected","gamepad_axis_value","gamepad_button_check","gamepad_button_check_pressed","gamepad_button_check_released","gamepad_button_value","gamepad_set_axis_deadzone","mouse_check_button_pressed","device_mouse_x_to_gui","device_mouse_y_to_gui"};
 TRoutine original_input_builtin[10]{};
 template<int I> void InputBuiltin(RValue&r,CInstance*s,CInstance*o,int n,RValue*a){
+ if(pause_stats_rendering){ndship::OwnerScope canonical(1);original_input_builtin[I](r,s,o,n,a);return;}
  bool blocked=false;
  if constexpr(I<7)blocked=(ndship::active_owner==1&&P1InputActive())||ndship::active_owner==2||(n>0&&a&&controls.Get().device!=ndship::config::Device::Keyboard&&a[0].ToInt32()==controls.Get().controller_slot);
  else blocked=ndship::active_owner==2&&ndship::upgrade::SessionActive();
@@ -239,6 +250,7 @@ void CodeCallback(CodeEvent& event){
  if(!owner&&other!=self)owner=Owner(other);
  const char* name=code?code->GetName():nullptr;
  Trays::Capture(self,name);
+ PauseBuild::Capture(self,name);
  if(asset==377&&name&&std::strstr(name,"_Step_0")){
   if(ndship::upgrade::SessionActive())owner=ndship::upgrade::CurrentMenuOwner();
   else if(ready&&!HasShip(1)&&HasShip(2))owner=2;
@@ -270,7 +282,7 @@ void CodeCallback(CodeEvent& event){
   if(ndship::hud::IsShipVisualAsset(asset)&&std::strstr(name,"_Create_"))ndship::hud::TintShipVisual(api,self,owner);
 
  }
- if(name&&(std::strstr(name,"_Destroy_")||std::strstr(name,"_CleanUp_"))){hidden_tutorial_effects.erase(self_id);owners.erase(self_id);ndship::UnregisterOwnedInstance(self);CoopBalance::targets.erase(self_id);}
+ if(name&&(std::strstr(name,"_Destroy_")||std::strstr(name,"_CleanUp_"))){hidden_tutorial_effects.erase(self_id);health_effects.erase(self_id);owners.erase(self_id);ndship::UnregisterOwnedInstance(self);CoopBalance::targets.erase(self_id);}
  if(qa_mode)Telemetry();
  if(ready&&!joining&&!Trays::Busy()&&!ndship::lifecycle::IsTearingDown()){
   if(qa_mode)Stimuli();
@@ -321,6 +333,7 @@ void SampleKeyboard(int owner=2){
 }
 
 nd::RValue* Input(nd::Script original,ndship::input::Edge edge,void* s,void* o,nd::RValue* r,int n,nd::RValue** a){
+ if(pause_stats_rendering){ndship::OwnerScope canonical(1);return original(s,o,r,n,a);}
  if(Trays::BlocksInput(ndship::active_owner)){
   bool escape=false;for(int i=0;i<n;++i){double key=0;if(ndship::input::Numeric(a[i],key)&&key==VK_ESCAPE)escape=true;}
   if(!escape){*(RValue*)r=RValue(false);return r;}
@@ -353,8 +366,15 @@ nd::RValue* EndScore(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
 nd::Script original_instance_create=nullptr;
 bool IsProjectile(int asset){switch(asset){case 269:case 389:case 490:case 517:case 612:case 632:case 640:case 649:case 704:case 764:case 794:case 798:case 803:return true;default:return false;}}
 nd::RValue* InstanceCreate(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
+ auto caller=(std::uintptr_t)_ReturnAddress()-access.base;
  int owner=ndship::active_owner;auto result=original_instance_create(s,o,r,n,a);
- if(owner>0&&result){int id=(result->kind&0xffffff)==15?(int)result->integer:-1;auto p=Resolve(id);if(p&&ndship::assets::IsTaggable(Asset(p))){Tag(p,owner);if(IsProjectile(Asset(p)))++shots[owner];}}
+ if(owner>0&&result){int id=(result->kind&0xffffff)==15?(int)result->integer:-1;auto p=Resolve(id);if(p&&ndship::assets::IsTaggable(Asset(p))){Tag(p,owner);if(IsProjectile(Asset(p)))++shots[owner];
+  if(Asset(p)==310&&(caller==0xc86389||caller==0xc86a15||caller==0xc836b1||caller==0xc842e8)){
+   // This native effect has no Cleanup callback. Keep only runner-live IDs.
+   for(auto it=health_effects.begin();it!=health_effects.end();)if(!Resolve(it->first))it=health_effects.erase(it);else ++it;
+   health_effects[id]={owner,std::max(1.0,Read(Resolve(controller_id),0x1af4ea8,1))};
+  }
+ }}
  return result;
 }
 nd::Event original_player_projectile_create=nullptr,original_blaster_create=nullptr;
@@ -374,6 +394,7 @@ void Stimuli(){
  if(command.restart){command.restart=0;if(Builtin("instance_number",{RValue(573)}).ToInt32()==0){Log("QA paused native restart object create");Builtin("instance_create_depth",{RValue(0.0),RValue(0.0),RValue(0.0),RValue(504)});}else Log("QA restart refused: enter native pause first");return;}
  if(command.upgrade){int owner=command.upgrade;command.upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x357de0,c);}}
  if(command.deferred_upgrade){int owner=command.deferred_upgrade;command.deferred_upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x358560,c);}}
+ if(command.shield_break){int owner=command.shield_break;command.shield_break=0;if(auto b=Resolve(powers[owner])){access.set(b,0x1af7fd8,0);Builtin("variable_instance_set",{Ref(powers[owner]),RValue("shieldbreak"),RValue(0)});Builtin("variable_instance_set",{Ref(powers[owner]),RValue("regenerate"),RValue(0)});}}
  if(command.damage){int owner=command.owner;auto b=Resolve(powers[owner]);if(b){access.set(b,nd::Fields::Hull,std::max(1.0,Read(b,nd::Fields::Hull,100)-command.damage));access.set(b,0x1af7fd8,std::max(0.0,Read(b,0x1af7fd8,0)-command.damage));}command.damage=0;}
  if(command.beacon_edge>=1&&command.beacon_edge<=2){int owner=command.beacon_edge;command.beacon_edge=0;if(auto ship=Resolve(ships[owner])){access.set(ship,nd::Fields::X,Global(0x1af7428)+Global(0x1af7468)*(owner==2?.03:.97));access.set(ship,nd::Fields::Y,Global(0x1af74a8)+Global(0x1af7418)*.5);access.set(ship,nd::Fields::HSpeed,0);access.set(ship,nd::Fields::VSpeed,0);}}
  if(command.beacon_center>=1&&command.beacon_center<=2){int owner=command.beacon_center;command.beacon_center=0;for(int pilot=1;pilot<=2;++pilot)if(auto ship=Resolve(ships[pilot])){access.set(ship,nd::Fields::X,Global(0x1af7428)+Global(0x1af7468)*(pilot==owner?.45:.65));access.set(ship,nd::Fields::Y,Global(0x1af74a8)+Global(0x1af7418)*.42);access.set(ship,nd::Fields::HSpeed,0);access.set(ship,nd::Fields::VSpeed,0);}}
@@ -399,7 +420,9 @@ nd::RValue* GainLevel(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
  }
  level_award_inflight=true;int primary=ready&&!HasShip(1)&&HasShip(2)?2:1;int second=primary==1?2:1;
  ndship::OwnerScope first(primary);double before=globals?Global(0x1af8ce8):0;auto out=original_gain_level(s,o,r,n,a);double after=globals?Global(0x1af8ce8):0;
- if(ready&&after>before){ndship::OwnerScope partner(second);SetGlobal(0x1af8ce8,Global(0x1af8ce8)+after-before);SetGlobal(0x1af98c8,Global(0x1af9148)+Global(0x1af8bc8));if(HasShip(second))Script(0x4c79f0,Resolve(powers[second]));Log("shared level award mirrored into independent partner choice budget");}
+ if(ready&&after>before){ndship::OwnerScope partner(second);SetGlobal(0x1af8ce8,Global(0x1af8ce8)+after-before);SetGlobal(0x1af98c8,Global(0x1af9148)+Global(0x1af8bc8));if(HasShip(second))Script(0x4c79f0,Resolve(powers[second]));Log("shared level award mirrored into independent partner choice budget");
+  for(int owner=1;owner<=2;++owner){ndship::OwnerScope pick(owner);if(Global(0x1af8938)<4)Trays::Request(owner);}
+ }
  level_award_inflight=false;return out;
 }
 #include "ship_balance_probe.hpp"
@@ -422,6 +445,7 @@ void SetBudget(int owner,double value){ndship::OwnerScope scope(owner);SetGlobal
 void* Controller(){return Resolve(controller_id);}
 int CountUI(){return Builtin("instance_number",{RValue(828)}).ToInt32();}
 #include "ship_trays_runtime.hpp"
+#include "ship_pause_runtime.hpp"
 // The game's status renderer caches health and shield animation on Controller.
 // Keep its P2 cache separate while letting native geometry and draw code run.
 constexpr std::uintptr_t UIFields[]={
@@ -477,6 +501,32 @@ nd::RValue* UIRefresh(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){return UIS
 ndship::surface_hud::NativeSurfaceRenderer native_hud;
 ndship::surface_hud::Result native_hud_result;
 std::array<ndship::surface_hud::Rect,3> native_life_region{},native_stock_region{};
+double native_shield_center[3]{},native_shield_width[3]{};
+nd::Event original_health_effect_draw=nullptr;
+unsigned long long health_effect_draws[3]{};
+void HealthEffectDraw(void*s,void*o){
+ auto found=health_effects.find(Id(s));
+ if(!ready||command.nativehud||!native_hud_result.ok||found==health_effects.end()){original_health_effect_draw(s,o);return;}
+ const auto effect=found->second;const int owner=effect.owner;
+ const auto source=native_hud_result.source[owner],dest=native_hud_result.dest[owner];
+ if(source.w<=0||source.h<=0){original_health_effect_draw(s,o);return;}
+ // These native GUI bursts are independent objects, not part of Controller's
+ // surface. Move only the four health/shield callsites; world bursts stay native.
+ RValue x,y,xscale,yscale;
+ api->GetBuiltin("x",(CInstance*)s,NULL_INDEX,x);api->GetBuiltin("y",(CInstance*)s,NULL_INDEX,y);
+ api->GetBuiltin("image_xscale",(CInstance*)s,NULL_INDEX,xscale);api->GetBuiltin("image_yscale",(CInstance*)s,NULL_INDEX,yscale);
+ double sx=dest.w/source.w,sy=dest.h/source.h;
+ RValue nx(dest.x+(native_shield_center[owner]-source.x)*sx),ny(dest.y+(y.ToDouble()-source.y)*sy);
+ RValue nsx(xscale.ToDouble()*sx*native_shield_width[owner]/effect.width),nsy(yscale.ToDouble()*sy);
+ api->SetBuiltin("x",(CInstance*)s,NULL_INDEX,nx);api->SetBuiltin("y",(CInstance*)s,NULL_INDEX,ny);
+ api->SetBuiltin("image_xscale",(CInstance*)s,NULL_INDEX,nsx);api->SetBuiltin("image_yscale",(CInstance*)s,NULL_INDEX,nsy);
+ if(qa_mode&&command.mutate_healthfx){api->SetBuiltin("x",(CInstance*)s,NULL_INDEX,x);api->SetBuiltin("y",(CInstance*)s,NULL_INDEX,y);}
+ RValue drawn_x,drawn_y;api->GetBuiltin("x",(CInstance*)s,NULL_INDEX,drawn_x);api->GetBuiltin("y",(CInstance*)s,NULL_INDEX,drawn_y);
+ original_health_effect_draw(s,o);++health_effect_draws[owner];
+ if(CoopBalance::trace){std::fprintf(CoopBalance::trace,"{\"kind\":\"health_effect\",\"counter\":%d,\"owner\":%d,\"x\":%.3f,\"y\":%.3f,\"width\":%.3f,\"source_x\":%.3f,\"source_y\":%.3f}\n",command.counter,owner,drawn_x.ToDouble(),drawn_y.ToDouble(),Builtin("display_get_gui_width").ToDouble(),x.ToDouble(),y.ToDouble());std::fflush(CoopBalance::trace);}
+ api->SetBuiltin("x",(CInstance*)s,NULL_INDEX,x);api->SetBuiltin("y",(CInstance*)s,NULL_INDEX,y);
+ api->SetBuiltin("image_xscale",(CInstance*)s,NULL_INDEX,xscale);api->SetBuiltin("image_yscale",(CInstance*)s,NULL_INDEX,yscale);
+}
 nd::Event original_stock_effect_draw=nullptr;
 void StockEffectDraw(void*s,void*o){if(!StockEffectCaptured())original_stock_effect_draw(s,o);}
 int native_capture_owner=0;
@@ -615,6 +665,8 @@ bool DrawNativeHud(void*s,void*o,int primary,double width,double height){
   double left=std::min(Read(controller,0x1b09958,0),Read(controller,0x1af4eb8,0))-3*scale;
   double right=std::max(Read(controller,0x1b09928,width),Read(controller,0x1af4e98,width))+3*scale;
   native_life_region[owner]={left,height-38*scale,std::max(1.0,right-left),26*scale};
+  native_shield_width[owner]=Read(controller,0x1af4ea8,0);
+  native_shield_center[owner]=Read(controller,0x1af4eb8,0)+native_shield_width[owner]/2;
   // Native Controller ammo/construct geometry is shared, but every reserve,
   // selected slot and assembly meter above was drawn under this owner's scope.
   double stock_left=width,stock_right=0;
@@ -684,7 +736,7 @@ void DrawGUI(void*s,void*o){
  state.menu_hint=state.upgrade_owner==2?menu_help:"P1: point at an upgrade and click to select";
  state.gameplay_hint=gameplay_help;
  ndship::hud::Draw(api,state,(CInstance*)s);
- Trays::Draw(s,gui_width,gui_height);++hud_frames;
+ Trays::Draw(s,gui_width,gui_height);PauseBuild::Draw(s,gui_width,gui_height);++hud_frames;
  if(presentation){static ULONGLONG at=0;auto now=GetTickCount64();if(now-at>=100){at=now;
   RValue color1(-1),color2(-1);if(auto ship=Resolve(ships[1]))api->GetBuiltin("image_blend",(CInstance*)ship,NULL_INDEX,color1);if(auto ship=Resolve(ships[2]))api->GetBuiltin("image_blend",(CInstance*)ship,NULL_INDEX,color2);
   std::fprintf(presentation,"{\"time\":%llu,\"command\":%d,\"hull1\":%.6f,\"hullmax1\":%.6f,\"shield1\":%.6f,\"shieldmax1\":%.6f,\"hull2\":%.6f,\"hullmax2\":%.6f,\"shield2\":%.6f,\"shieldmax2\":%.6f,\"color1\":%d,\"color2\":%d,\"marker1\":%llu,\"marker2\":%llu,\"native_rect_hidden\":%llu,\"hud_frames\":%llu,\"menu_owner\":%d,\"menu\":%d,\"fire_key\":%d,\"steering\":%d,\"key\":%d,\"engine_key\":%d,\"engine_input\":%d,\"p2_fire\":%d,\"hint1\":%.6f,\"hint2\":%.6f,\"upgrade_hint\":%.6f,\"native_hud\":%d,\"native_frames\":%llu,\"bar1\":%.6f,\"bar2\":%.6f,\"src1_x\":%.6f,\"src1_y\":%.6f,\"src1_w\":%.6f,\"src1_h\":%.6f,\"src2_x\":%.6f,\"src2_y\":%.6f,\"src2_w\":%.6f,\"src2_h\":%.6f,\"dst1_x\":%.6f,\"dst1_y\":%.6f,\"dst1_w\":%.6f,\"dst1_h\":%.6f,\"dst2_x\":%.6f,\"dst2_y\":%.6f,\"dst2_w\":%.6f,\"dst2_h\":%.6f}\n",
@@ -711,6 +763,7 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  if(!ndship::InstallContextHooks(module,access.base,Log))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.PlayerCreate",0xc41ce0,(void*)PlayerCreate,(void**)&original_player_create)||!Hook("Ship.PowersCreate",0xc77c90,(void*)PowersCreate,(void**)&original_powers_create)||!Hook("Ship.PlayerStep",0xc4a650,(void*)PlayerStep,(void**)&original_player_step)||!Hook("Ship.PlayerDestroy",0xc43c40,(void*)PlayerDestroy,(void**)&original_player_destroy))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.StockEffectDraw",0x936a80,(void*)StockEffectDraw,(void**)&original_stock_effect_draw))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Ship.HealthEffectDraw",0x88dcf0,(void*)HealthEffectDraw,(void**)&original_health_effect_draw))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.PlayerStep2",0xc5b970,(void*)PlayerStep2,(void**)&original_player_step2))return AURIE_MODULE_INITIALIZATION_FAILED;
  void* keyboard_routine=nullptr;if(!AurieSuccess(api->GetNamedRoutinePointer("keyboard_check",&keyboard_routine))||!keyboard_routine)return AURIE_MODULE_INITIALIZATION_FAILED;engine_keyboard_check=(TRoutine)keyboard_routine;
  if(!ndship::InstallQueryHooks(module,api)||!HookBuiltin("window_has_focus",Focus,original_focus))return AURIE_MODULE_INITIALIZATION_FAILED;
@@ -723,8 +776,9 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  if(!Hook("Balance.ChooseTarget",0xe7a60,(void*)CoopBalance::ChooseTarget,(void**)&CoopBalance::original_choose_target)||!Hook("Balance.UpdateScore",0x781240,(void*)CoopBalance::UpdateScore,(void**)&CoopBalance::original_update_score)||!Hook("Balance.ExpControl",0x2def70,(void*)CoopBalance::ExpControl,(void**)&CoopBalance::original_exp_control))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Balance.Curated",0x61b170,(void*)CoopBalance::Curated,(void**)&CoopBalance::original_curated)||!Hook("Balance.Dynamic",0x62df50,(void*)CoopBalance::Dynamic,(void**)&CoopBalance::original_dynamic)||!Hook("Balance.SpawnParser",0x647cd0,(void*)CoopBalance::SpawnParser,(void**)&CoopBalance::original_spawn_parser))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!ndship::lifecycle::InstallLifecycleHooks(module,access.base,{OwnedIds,Owner,Forget,DisposeList,BeginTeardown,EndTeardown,Log}))return AURIE_MODULE_INITIALIZATION_FAILED;
- if(!ndship::upgrade::Install(module,access.base,{Budget,Controller,CountUI,Log,Trays::CombatStage,Trays::Request,SetBudget}))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!ndship::upgrade::Install(module,access.base,{Budget,Controller,CountUI,Log,Trays::UsesCompact,Trays::Request,SetBudget}))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Trays::Install())return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!PauseBuild::Install())return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.UIFlash",0x371ea0,(void*)UIFlash,(void**)&original_ui_flash)||!Hook("Ship.UIPositions",0x4483b0,(void*)UIPositions,(void**)&original_ui_positions)||!Hook("Ship.UIRefresh",0x4c79f0,(void*)UIRefresh,(void**)&original_ui_refresh))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.HealthRect",ndship::hud::NativeDrawRectangleRva,(void*)HealthRectangle,(void**)&original_draw_rectangle))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.UpgradeTutorial",0xe60f70,(void*)UpgradeTutorial,(void**)&original_upgrade_tutorial)||!Hook("Ship.GenericTutorial",0xe5a940,(void*)GenericTutorial,(void**)&original_generic_tutorial)||!Hook("Ship.GenericTutorial2",0xe5bb10,(void*)GenericTutorial2,(void**)&original_generic_tutorial2))return AURIE_MODULE_INITIALIZATION_FAILED;

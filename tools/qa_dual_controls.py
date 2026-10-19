@@ -13,12 +13,9 @@ def run(ns):
     def metrics():return rows(True)[-1]
     def tray(owner):return next(r for r in reversed(read_jsonl(runtime/'ship-balance.jsonl')) if r.get('kind')=='tray' and r['owner']==owner)
     try:
+        from qa_upgrade_flow import starters
+        starters(ns)
         # Equip the native single-shot weapon for both to avoid firing tails.
-        for _ in range(3):
-            control(level=1);wait(lambda:metrics()['choices1']>0)
-            control(upgrade=1);wait(lambda:metrics()['ui']==1 and metrics()['menu_owner']==1 and metrics()['confirmable'])
-            ui('press','ENTER');wait(lambda:metrics()['ui']==1 and metrics()['menu_owner']==2 and metrics()['confirmable'],20)
-            control(confirm=1);time.sleep(.2);control();wait(lambda:metrics()['ui']==metrics()['menu_session']==0,20)
         for owner in (1,2):control(augment=8,owner=owner);time.sleep(.2)
         first.write_text('[controls]\nsteering=tank\ndevice=keyboard\nmouse_aim=1\ncontroller_slot=0\n[keys]\nup=1\nfire=2\n')
         time.sleep(1.2);control(key=2);time.sleep(.7)

@@ -14,7 +14,7 @@ P1 uses the copied game's controls. P2's existing profile remains compatible.
 Mouse aims, left mouse button thrusts, and right mouse button fires. These are
 the copied game's mouse bindings.
 
-During combat, middle mouse opens/closes personal upgrades. Scroll to browse,
+Middle mouse opens/closes personal upgrades. Scroll to browse,
 hover a hex to inspect, and left click to choose. Reroll and Researcher banish
 controls appear in the strip.
 
@@ -43,25 +43,26 @@ F6 pauses play and opens the editor. `ConfigureControls.cmd` opens it separately
 Choose directional/tank steering, rebind keys or configure controller mappings.
 Profiles live in `runtime\p1-controls.ini` and `runtime\p2-controls.ini`. P2 keyboard bindings take priority
 over conflicting P1 keyboard alternatives; P1's mouse remains available.
-Physical controller hardware has not been tested. P1's original starter/menu
-bindings still apply on the native full-screen menus; the compact combat trays
-use the configured controls.
+Physical controller hardware has not been tested. Starting gear and later
+augments both use the compact strips and configured controls.
 
 ## Playing together
 
 Each player keeps their own upgrade choices and rerolls. Closing a strip
 preserves its offers and spends nothing. While choosing, that ship drifts under
 normal physics, remains vulnerable, and uses its controls for the strip; the
-teammate can keep fighting. Escape remains a shared pause.
+teammate can keep fighting. Escape remains a shared pause. Both native build
+inventories appear separately; click P1 or P2, or press Tab, to switch the
+central stats. Hover an icon for the native item information.
 
 Both HUDs use native health, shield and status rendering with red/gold accents.
 Upgrade names use the native heading font in white; counts use the native small
 font in gray. Player color stays on the selection outlines.
-Control hints fade. Initial weapon, shield and body selections use the native
-screen; combat upgrades use the compact strips. The native upgrade key also
-opens a compact strip during combat. Obsolete single-player upgrade prompts
+Control hints fade. Initial weapon, shield and body selections use the same
+compact strips as later augments. The native upgrade key also opens a strip. Obsolete single-player upgrade prompts
 are hidden; navigation hints fade and the selected name stays visible.
 
-F8 can join P2 before automatic joining; it does not give a free redeploy.
+Both ships join before starting gear is selected. F8 retries a failed join;
+it does not give a free redeploy.
 For Steam Remote Play, the host uses mouse and the guest uses keyboard. Grant
 guest keyboard access, leave guest mouse off, and keep the host game focused.

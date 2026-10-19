@@ -48,6 +48,11 @@ def run(ns):
                     samples+=1
                     matches+=any(sum(abs(a-b) for a,b in zip(px[:3],output.getpixel((ox+dx,oy+dy))))<50 for dx,dy in ((0,0),(-1,0),(1,0),(0,-1),(0,1)))
             check(f'P{owner} presents its own native ammo and construct pixels',samples>50 and matches/samples>.87,{'samples':samples,'matches':matches,'geometry':g,'image':str(image)})
+    # HUD fixtures use the ordinary body: Spectre's native cloak darkens the
+    # entire background, including world-space beacon artwork.
+    for owner in (1,2):
+        control(augment=9,owner=owner)
+        time.sleep(.5)
     control(augment=7,owner=1)
     time.sleep(.7)
     control(augment=32,owner=2)
@@ -63,6 +68,8 @@ def run(ns):
     check('native reserve state belongs to each build',stock(1)['blade']>0 and stock(2)['blade']==0 and stock(1)['mines']==0 and stock(2)['mines']>0,[stock(1),stock(2)])
     pixels(image,'independent-native-stock')
     if mutation:raise RuntimeError('Stock-owner mutation unexpectedly passed')
+    time.sleep(2)
+    snapshot('gameplay-presentation',hold=False)
     # The native direct slot key depletes P2 mines while P1's build is untouched.
     before=stock(2)['mines'];partner=stock(1)['allies']
     control(engine_input=1,engine_key=ord('7'))
@@ -77,11 +84,13 @@ def run(ns):
     time.sleep(3)
     image=snapshot('stock-with-both-upgrade-trays')
     pixels(image,'stock-with-both-upgrade-trays')
+    time.sleep(2)
+    snapshot('trays-presentation',hold=False)
     for owner in (1,2):
         scale=min(Image.open(image).width/2400,Image.open(image).height/1350)
         check('native stock stays below upgrade controls and above health',stock(owner)['dy']>(Image.open(image).height-285*scale+108*scale) and stock(owner)['dy']+stock(owner)['dh']<Image.open(image).height-38*scale,stock(owner))
     control(engine_input=1,engine_key=ord('O'));time.sleep(.3)
-    snapshot('compact-native-inspect',engine_input=1,engine_key=ord('O'))
+    snapshot('compact-native-inspect',hold=False,engine_input=1,engine_key=ord('O'))
     control(engine_input=1)
     control(tray=1);wait(lambda:ns['tray'](1)['open']==0)
     control(tray=2);wait(lambda:ns['tray'](2)['open']==0)

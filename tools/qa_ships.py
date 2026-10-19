@@ -17,7 +17,7 @@ process=None;pid=None;counter=0;config_before=None
 before=fingerprint(ORIGINAL_SAVES)
 def control(**changes):
  global counter
- counter+=1;c=dict(counter=counter,qa_focus=1,mutate=0,rescue_mode=int('--polish' in sys.argv),mutate_hud=int(ui_mutation),mutate_sharing=int(sharing_mutation),mutate_beacon=0);c.update(changes)
+ counter+=1;c=dict(counter=counter,qa_focus=1,mutate=0,rescue_mode=int('--polish' in sys.argv),mutate_hud=int(ui_mutation),mutate_sharing=int(sharing_mutation),mutate_beacon=0,mutate_startup=int('--mutation-startup' in sys.argv),mutate_pause=int('--mutation-pause' in sys.argv),mutate_healthfx=int('--mutation-healthfx' in sys.argv));c.update(changes)
  temp=runtime/'ship-control.pending';temp.write_text(''.join(f'{k}={v}\n' for k,v in c.items()))
  # The native reader can briefly hold a Windows handle without delete sharing.
  for attempt in range(80):
@@ -27,6 +27,7 @@ def control(**changes):
    time.sleep(.025)
  return counter
 def rows(metrics=False):return [r for r in read_jsonl(runtime/'ship-telemetry.jsonl') if bool(r.get('metrics'))==metrics]
+def personal_tray(owner):return next((r for r in reversed(read_jsonl(runtime/'ship-balance.jsonl')) if r.get('kind')=='tray' and r['owner']==owner),None)
 def check(name,condition,details):
  report['checks'].append(dict(name=name,pass_=bool(condition),details=details));print(('PASS ' if condition else 'FAIL ')+name+': '+str(details),flush=True)
  if not condition:raise RuntimeError(name)
@@ -68,10 +69,13 @@ try:
   ui('press');time.sleep(2)
  baseline=wait(lambda: next((r for r in reversed(rows()) if r['p1']>=100000 and r['b1']>=100000),None))
  check('one native P1',baseline['p1_asset']==603,baseline)
- control(join=1)
+ if '--upgrade-flow' not in sys.argv:control(join=1)
  joined=wait(lambda: next((r for r in reversed(rows()) if r.get('ready') and r['p2']>=100000),None))
  check('two distinct native player ships',joined['p1']!=joined['p2'] and joined['p1_asset']==joined['p2_asset']==603,joined)
  check('two distinct build owners',joined['b1']!=joined['b2'] and joined['hull1']>0 and joined['hull2']>0,joined)
+ if '--upgrade-flow' in sys.argv:
+  from qa_upgrade_flow import run
+  run(globals());report['status']='PASS';raise SystemExit(0)
  if '--stock-hud' in sys.argv and '--mutation-stock-hud' in sys.argv:
   from qa_stock_hud import run
   run(globals());raise RuntimeError('Shared-stock mutation unexpectedly completed')
@@ -79,33 +83,20 @@ try:
   from qa_dual_controls import run
   run(globals());report['status']='PASS';raise SystemExit(0)
  if '--starter-bank' in sys.argv:
-  def starter():return [r for r in read_jsonl(runtime/'ship-balance.jsonl') if r.get('kind')=='tray']
-  def owned(owner):return next((r for r in reversed(starter()) if r['owner']==owner),None)
-  control(level=4);wait(lambda:rows(True)[-1]['choices1']==rows(True)[-1]['choices2']==4)
-  control(upgrade=1)
-  for owner in (1,2):
-   for stage in (1,2,3):
-    wait(lambda:rows(True)[-1]['ui']==1 and rows(True)[-1]['menu_owner']==owner and rows(True)[-1]['confirmable'] and owned(owner)['stage']==stage,20)
-    if owner==1:ui('press','ENTER')
-    else:
-     control(confirm=1);time.sleep(.2);control()
-    wait(lambda:owned(owner)['stage']>stage,20)
-  wait(lambda:rows(True)[-1]['ui']==rows(True)[-1]['menu_session']==0)
-  check('P1 banked ordinary choice does not block P2 starter choices',owned(1)['budget']==owned(2)['budget']==1 and owned(1)['stage']>=4 and owned(2)['stage']>=4,{'first':owned(1),'second':owned(2)})
+  from qa_upgrade_flow import starters
+  tray=starters(globals())
+  control(level=1);wait(lambda:tray(1)['budget']==tray(2)['budget']==1)
+  control(upgrade=1,deferred_upgrade=2);wait(lambda:tray(1)['open'] and tray(2)['open'])
+  control(tray=1);wait(lambda:not tray(1)['open'])
+  control(tray_action=1,owner=2,tray_pick=0);wait(lambda:tray(2)['budget']==0)
+  check('P1 banked ordinary choice does not block P2',tray(1)['budget']==1 and rows(True)[-1]['ui']==0,[tray(1),tray(2)])
   ui('close');process.wait(timeout=20);check('clean owned banked-starter shutdown',process.returncode==0,process.returncode)
   report['status']='PASS';raise SystemExit(0)
  if any(flag in sys.argv for flag in ('--trays','--overlays','--stock-hud')):
   def trayrows():return [r for r in read_jsonl(runtime/'ship-balance.jsonl') if r.get('kind')=='tray']
   def tray(owner):return next((r for r in reversed(trayrows()) if r['owner']==owner),None)
-  # Preserve and exercise all three native starter stages for each build.
-  for stage in (1,2,3):
-   control(level=1);wait(lambda:rows(True)[-1]['choices1']>0)
-   control(upgrade=1);wait(lambda:rows(True)[-1]['ui']==1 and rows(True)[-1]['menu_owner']==1 and rows(True)[-1]['confirmable'])
-   ui('press','ENTER')
-   wait(lambda:rows(True)[-1]['ui']==1 and rows(True)[-1]['menu_owner']==2 and rows(True)[-1]['confirmable'],20)
-   control(confirm=1);time.sleep(.2);control()
-   wait(lambda:rows(True)[-1]['ui']==0 and rows(True)[-1]['menu_session']==0,20)
-   check('native starter stage preserved for both ships',tray(1)['stage']==tray(2)['stage']==stage+1,{'first':tray(1),'second':tray(2)})
+  from qa_upgrade_flow import starters
+  starters(globals())
   if '--stock-hud' in sys.argv:
    from qa_stock_hud import run
    run(globals());report['status']='PASS';raise SystemExit(0)
@@ -351,26 +342,16 @@ try:
   check('engine key release stops native P2 fire',rows(True)[-1]['shots2']==released,rows(True)[-1])
   control();profile_path.write_bytes(config_before);wait(lambda:uistate()[-1]['fire_key']==ord('N'))
   control(xp=1);wait(lambda:rows(True)[-1]['choices1']>0 and rows(True)[-1]['choices2']>0)
-  control(upgrade=1);wait(lambda:rows(True)[-1].get('menu_owner')==1 and rows(True)[-1].get('confirmable'))
-  p1_image=snapshot('p1-red-upgrade');ui('press','ENTER')
-  wait(lambda:rows(True)[-1].get('menu_owner')==2 and rows(True)[-1].get('confirmable'))
+  control(upgrade=1);wait(lambda:personal_tray(1)['open'] and personal_tray(2)['open'])
+  check('configured upgrades stay compact',rows(True)[-1]['ui']==rows(True)[-1]['menu_session']==0,rows(True)[-1])
+  snapshot('both-native-starter-trays')
+  control(tray_action=1,owner=1,tray_pick=0);wait(lambda:rows(True)[-1]['choices1']==0)
   control(key=ord('K'));time.sleep(.25);control();time.sleep(.15)
-  check('P2 menu down no longer cancels upgrade',rows(True)[-1]['ui']==1 and rows(True)[-1]['choices2']>0,rows(True)[-1])
-  p2_image=snapshot('p2-gold-upgrade')
-  for path,color in [(p1_image,(246,91,105)),(p2_image,(255,214,64))]:
-   img=Image.open(path).convert('RGB');iw,ih=img.size
-   def accent(px):
-    r,g,b=px
-    return r>80 and r>1.4*g and r>1.2*b if color[1]<100 else r>100 and g>80 and b<.65*min(r,g) and abs(r-g)<100
-   count=sum(accent(px) for px in img.crop((int(iw*.25),0,int(iw*.75),int(ih*.2))).getdata())
-   check('upgrade owner banner rendered '+path.stem,count>150,{'pixels':count,'image':str(path)})
-  wait(lambda:uistate()[-1].get('upgrade_hint')==0,5)
-  snapshot('p2-gold-upgrade-hint-faded')
-  check('upgrade player cue fades while menu remains open',rows(True)[-1]['ui']==1 and uistate()[-1]['upgrade_hint']==0,uistate()[-1])
-  control(key=ord('L'));time.sleep(.15);control();time.sleep(.1)
+  check('P2 down browses without cancelling',personal_tray(2)['open'] and rows(True)[-1]['choices2']>0,personal_tray(2))
+  snapshot('p2-native-starter-tray')
   control(key=ord('N'));time.sleep(.25);control()
   wait(lambda:rows(True)[-1]['ui']==0 and rows(True)[-1]['choices2']==0)
-  check('configured physical menu navigation and confirm',rows(True)[-1]['choices2']==0,rows(True)[-1])
+  check('configured compact navigation and confirm',rows(True)[-1]['choices2']==0,rows(True)[-1])
   # Exercise the same deferred pause/editor route used by the physical F6 hotkey.
   control(configure=1)
   def editor_pid():
@@ -389,18 +370,10 @@ try:
   report['status']='PASS';raise SystemExit(0)
 
  if '--solo-ui' in sys.argv:
-  c=control(kill=1)
-  wait(lambda: rows()[-1]['p1']==-1 and rows()[-1]['p2']>=100000)
-  c=control(xp=1)
-  wait(lambda: rows(True)[-1].get('ui')==1 and rows(True)[-1].get('confirmable')==1)
-  print('SOLO MENU BEFORE',rows(True)[-1],flush=True)
-  control(screen=1);time.sleep(.2)
-  control(right=1);time.sleep(.3);control();time.sleep(.1)
-  print('SOLO MENU SELECTED',rows(True)[-1],flush=True)
-  control(right=1);time.sleep(.15);control();time.sleep(.1)
-  control(confirm=1);time.sleep(.3);control()
-  wait(lambda: rows(True)[-1].get('ui')==0 and rows(True)[-1].get('menu_session')==0)
-  check('solo P2 menu navigation and confirm',rows(True)[-1]['choices2']==0,rows(True)[-1])
+  control(kill=1);wait(lambda:rows()[-1]['p1']==-1 and rows()[-1]['p2']>=100000)
+  control(xp=1);wait(lambda:personal_tray(2)['open'])
+  control(tray_action=1,owner=2,tray_pick=1);wait(lambda:rows(True)[-1]['choices2']==0)
+  check('solo P2 compact navigation and confirm',rows(True)[-1]['ui']==0,rows(True)[-1])
   ui('close');process.wait(timeout=20);report['status']='PASS';raise SystemExit(0)
 
  time.sleep(2)
@@ -427,15 +400,16 @@ try:
  awarded=wait(lambda: next((r for r in reversed(rows(True)) if r['command']==c and r['level']>previous['level'] and r['choices2']>previous['choices2']),None))
  check('shared native XP awards two independent choices',awarded['level']==previous['level']+1 and awarded['choices1']==previous['choices1']+1 and awarded['choices2']==previous['choices2']+1,{'before':previous,'after':awarded})
  c=control(upgrade=1)
- opened=wait(lambda: next((r for r in reversed(rows(True)) if r['command']==c and r.get('ui')==1 and r.get('menu_owner')==1),None))
- check('native P1 upgrade screen',opened['ui']==1,opened)
- ui('press','ENTER');time.sleep(1)
- second=wait(lambda: next((r for r in reversed(rows(True)) if r.get('ui')==1 and r.get('menu_owner')==2 and r.get('confirmable')==1),None),20)
- check('automatic native P2 upgrade screen',second['choices1']==awarded['choices1']-1 and second['choices2']==awarded['choices2'],second)
+ wait(lambda:personal_tray(1)['open'] and personal_tray(2)['open'])
+ opened=rows(True)[-1]
+ check('both native starter offer sets use compact trays',opened['ui']==opened['menu_session']==0,opened)
+ control(tray_action=1,owner=1,tray_pick=0)
+ wait(lambda:rows(True)[-1]['choices1']==awarded['choices1']-1)
+ time.sleep(.4);second=rows(True)[-1]
  check('P1 selection leaves P2 gear unchanged',second['weapon2']==awarded['weapon2'] and second['weapon1']!=awarded['weapon1'],second)
- control(right=1);time.sleep(.15);control();time.sleep(.1)
- control(confirm=1);time.sleep(.3);control()
- closed=wait(lambda: next((r for r in reversed(rows(True)) if r['time']>second['time'] and r.get('ui')==0 and r.get('menu_session')==0),None),20)
+ control(tray_action=1,owner=2,tray_pick=1)
+ wait(lambda:rows(True)[-1]['choices2']==awarded['choices2']-1)
+ time.sleep(.4);closed=rows(True)[-1]
  check('each player spends only own choice',closed['choices1']==awarded['choices1']-1 and closed['choices2']==awarded['choices2']-1,closed)
  check('P2 selection leaves P1 gear unchanged',closed['weapon1']==second['weapon1'] and closed['weapon2']!=second['weapon2'],closed)
  phase(1,fire=1)
@@ -474,10 +448,10 @@ try:
  previous=rows(True)[-1];c=control(xp=1)
  solo_award=wait(lambda: next((r for r in reversed(rows(True)) if r['command']==c and r['level']>previous['level'] and r['choices2']>previous['choices2']),None))
  check('surviving P2 still gains team XP choice',solo_award['level']==previous['level']+1,solo_award)
- solo_ui=wait(lambda: next((r for r in reversed(rows(True)) if r.get('ui')==1 and r.get('menu_owner')==2 and r.get('confirmable')==1),None))
- control(right=1);time.sleep(.15);control();time.sleep(.1)
- control(confirm=1);time.sleep(.3);control()
- wait(lambda: rows(True)[-1].get('ui')==0 and rows(True)[-1].get('menu_session')==0)
+ wait(lambda:personal_tray(2)['open'])
+ solo_ui=rows(True)[-1]
+ control(tray_action=1,owner=2,tray_pick=1)
+ wait(lambda:rows(True)[-1]['choices2']==previous['choices2'])
  check('surviving P2 can select upgrades',rows(True)[-1]['choices2']==previous['choices2'],rows(True)[-1])
  # The shared Controller now runs in P2 scope. Its native Escape binding must
  # still pause/resume even though the P2 upgrade Back key is independent.

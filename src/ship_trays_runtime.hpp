@@ -25,8 +25,12 @@ bool IsOpen(int owner){return owner>=1&&owner<=2&&trays[owner].open;}
 void Reset(){for(auto& tray:trays)tray=Tray{};consume_confirm[1]=consume_confirm[2]=false;}
 bool CombatStage(int owner){
  if(!ready||!globals||owner<1||owner>2||!Resolve(powers[owner]))return false;
- ndship::OwnerScope scope(owner);return Global(0x1af8938)>=4;
+ ndship::OwnerScope scope(owner);return Global(0x1af8938)>=1;
 }
+// The module always starts a two-player run. Even before the ships have
+// finished creation, native goto must wait here rather than pause the world.
+bool UsesCompact(int owner){if(qa_mode&&command.mutate_startup&&!CombatStage(owner))return false;
+ if(qa_mode&&command.mutate_startup){ndship::OwnerScope scope(owner);if(Global(0x1af8938)<4)return false;}return owner>=1&&owner<=2;}
 bool Eligible(int owner){return CombatStage(owner)&&HasShip(owner);}
 void Request(int owner){if(owner>=1&&owner<=2)trays[owner].requested=true;}
 double Revision(int owner){auto p=Resolve(powers[owner]);return Global(0x1af8938)*10000000+Builtin("ds_list_size",{Field(p,0x1af7678)}).ToDouble()*10000+Read(p,0x1af96c8,0)*100+Read(p,0x1af7f88,0);}
@@ -116,7 +120,9 @@ bool Act(int owner,int action,int pick=-1){
  if(action==1){
   double before=Budget(owner);{Transaction tx(owner,2);auto b=tx.Make();if(!b)return false;Fill(b,tray);Invoke(0x1053f0,b);}
   if(Budget(owner)!=before-1){++failed;return false;}
-  tray=Tray{};consume_confirm[owner]=true;++purchased;return true;
+  tray=Tray{};consume_confirm[owner]=true;++purchased;
+  if(Global(0x1af8938)<4&&Budget(owner)>0)tray.requested=true;
+  return true;
  }
  if(action==2){NativeState state(owner);if(!ChargeReroll(owner))return false;state.accepted=Generate(owner);return state.accepted;}
  if(action==3){
@@ -161,7 +167,9 @@ void Tick(){
  auto action=[&](ndship::config::Action a){return (profile.device!=ndship::config::Device::Controller&&KeyDown(profile.Key(a)))||(pad&profile.Pad(a))!=0;};
  unsigned bits=((owner==1&&!p1_custom?KeyDown(VK_MBUTTON):action(ndship::config::Action::Upgrade))?2u:0u)|(action(ndship::config::Action::Fire)?4u:0u)|((action(ndship::config::Action::Up)||axis>.55)?8u:0u)|((action(ndship::config::Action::Down)||axis<-.55)?16u:0u)|(action(ndship::config::Action::Stabilize)?32u:0u)|(action(ndship::config::Action::Deploy)?64u:0u)|(action(ndship::config::Action::Construct2)?128u:0u)|(Builtin("mouse_check_button",{RValue(1)}).ToBoolean()?256u:0u)|((action(ndship::config::Action::Left)||axis_x<-.55)?512u:0u)|((action(ndship::config::Action::Right)||axis_x>.55)?1024u:0u);
  unsigned pressed=bits&~previous_bits[owner];previous_bits[owner]=bits;if(!(bits&(owner==1&&(!p1_custom||profile.mouse_aim)?256:4)))consume_confirm[owner]=false;
-  auto& tray=trays[owner];const bool requested=tray.requested;bool opening=requested||(pressed&2);tray.requested=false;
+  auto& tray=trays[owner];const bool requested=tray.requested;
+  if(requested&&(!Eligible(owner)||Budget(owner)<=0||Read(Resolve(powers[owner]),0x1af7498,0)<=0))continue;
+  bool opening=requested||(pressed&2);tray.requested=false;
   if(qa_mode&&command.tray==owner){command.tray=0;opening=true;}
   bool chip=owner==1&&(!p1_custom||profile.mouse_aim)&&mx<width*.24&&my>height-195*height/1350&&my<height-155*height/1350;
   if(chip&&(pressed&256))opening=true;
@@ -257,7 +265,9 @@ void Draw(void* self,double width,double height){
 }
 // Verified presentation-only entry detours; active only during a transaction.
 nd::Script presentation_original[8]{};
-template<int I>nd::RValue* Presentation(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(transaction){*(RValue*)r=RValue(false);return r;}return presentation_original[I](s,o,r,n,a);}
+template<int I>nd::RValue* Presentation(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){if(transaction){*(RValue*)r=RValue(false);return r;}
+ if constexpr(I==2||I==3||I==4)return PauseBuild::Owned(presentation_original[I],s,o,r,n,a);
+ return presentation_original[I](s,o,r,n,a);}
 void Tick();void Draw(void*,double,double);
 void Trace(int counter){
  if(!CoopBalance::trace||!ready||transaction)return;

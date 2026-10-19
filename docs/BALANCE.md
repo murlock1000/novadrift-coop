@@ -56,7 +56,7 @@ already-spawned enemies keep their state. Boss health/damage are unchanged.
 
 XP-earned levels advance the shared team level and give each living player their
 own banked upgrade choice. Builds, rerolls and purchases stay separate.
-After the three native starter choices, either player can open a personal tray
+From the first weapon choice onward, either player can open a personal tray
 during combat. Both may choose at once; closing preserves the exact offer set.
 No choosing immunity is added, so the teammate can cover the selecting ship.
 

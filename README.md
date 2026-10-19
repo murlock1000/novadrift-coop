@@ -16,12 +16,17 @@ Play Together.
 
 ## Upgrades
 
-Starting weapons, shields and bodies use the game's full-screen picker.
-After those choices, small upgrade strips sit beside each player's HUD, leaving the arena visible.
+Weapons, shields, bodies and augments all use small upgrade strips beside each
+player's HUD, leaving the arena visible.
 Both players can browse at once, or one can keep fighting while the other chooses.
 Hover a hex or hold Inspect to reveal its [full description](docs/screenshots/upgrade-inspect.png). Combat stays live.
 
 ![Both players browsing compact native upgrade strips](docs/screenshots/compact-upgrades.png)
+
+Press Escape to see both builds separately. Click P1 or P2, or press Tab, to
+switch the native stats display.
+
+![Separate builds and native stats in the pause screen](docs/screenshots/separate-builds.png)
 
 ## Revival
 

@@ -70,6 +70,7 @@ with the interactive game/helper closed:
 python3 tools/qa_ships.py
 python3 tools/qa_ships.py --presentation-controls
 python3 tools/qa_ships.py --polish
+python3 tools/qa_ships.py --upgrade-flow
 python3 tools/qa_ships.py --trays
 python3 tools/qa_ships.py --overlays
 python3 tools/qa_ships.py --stock-hud
@@ -84,6 +85,18 @@ check; it is not a Steam connection test. Mutation modes in `qa_ships.py` should
 fail their targeted ownership, native UI or input-sharing assertion. Review each
 script's `--help` before using mutation or performance runs. Reports and captures
 remain under ignored `local/`.
+
+The upgrade-flow regression also has three expected failures:
+
+```sh
+python3 tools/qa_ships.py --upgrade-flow --mutation-startup
+python3 tools/qa_ships.py --upgrade-flow --mutation-pause
+python3 tools/qa_ships.py --upgrade-flow --mutation-healthfx
+```
+
+They restore the native starter menu, combined pause inventory, and old central
+shield-flash coordinates respectively. Each must fail its corresponding check.
+
 
 `tools/diagnose_display.ps1` passively reports physical client/monitor bounds for
 an exact PID, creation time and EXE SHA. Monitor coverage proves fullscreen-sized

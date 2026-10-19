@@ -1,5 +1,37 @@
 # Validation record
 
+## Compact starting gear and separate pause builds (2026-10-19)
+
+Starting weapons, shields and bodies now use the same compact trays as later
+augments. Native upgrade and deferred-upgrade entry points are redirected even
+before joining finishes, so P1 cannot buy starter gear before P2 gets its own
+build. The native intro timing is preserved.
+
+The final DLL passed 25 upgrade-flow checks: automatic joining without a forced
+join command, separate native offers and purchases for all three starter stages,
+different weapons/shields/bodies, independent augments, native shield flashes at
+each owner's relocated health bar, separate native pause icons, switching native
+stats to P2, and shared Escape pause/resume. It also passed 34 stock-HUD checks,
+including native pixel comparisons, deployment, revival, and a surviving P2.
+During this change, the broader 36-check ship/lifecycle run and 35-check tray run
+also passed, before a final cleanup of expired shield-effect IDs.
+
+Pause inventories reuse native gear, mod and banished-mod rendering and native
+hover information. Tab or clicking the P1/P2 headings changes the central native
+stats. Score and elapsed time remain team values. The shared native scroll and
+color animation advance once despite rendering two owner surfaces.
+
+The final build also passed 27 checks for per-player rebinding and keyboard/mouse
+input. Three deliberate mutations each failed the intended assertion: restoring
+the full-screen starter menu, combined pause rendering, or central shield-flash
+coordinates. These tests used the same compiled DLL with QA-only mutation flags.
+
+README gameplay, compact-tray and Inspect images are unmodified game-client
+captures with simulation running. The stock fixture uses the ordinary native
+body so Spectre's background-darkening effect does not obscure documentation.
+Earlier entries below describe previous builds; their full-screen starter
+exception no longer applies. All original save fingerprints remained unchanged.
+
 ## Native co-op
 
 An earlier ship build passed a 37-check bounded native regression: two real Player
