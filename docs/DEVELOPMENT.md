@@ -77,6 +77,8 @@ python3 tools/qa_ships.py --stock-hud
 python3 tools/qa_ships.py --starter-bank
 python3 tools/qa_ships.py --dual-controls
 python3 tools/qa_ships.py --tray-controls --saved-controls
+python3 tools/qa_ships.py --mouse-shop
+python3 tools/qa_ships.py --mouse-shop --saved-controls
 python3 tools/qa_ships.py --death-effects
 python3 tools/qa_launcher.py
 python3 tools/qa_launcher.py --remote-wrapper
@@ -120,14 +122,20 @@ mouse and keyboard input, verifies thrust/steering/fire without spending points,
 and checks deliberate purchases with mouse and Inspect+confirm. The negative
 control `--tray-controls --mutation-tray-input` restores the old visible-tray
 blocker and must fail the acceleration check.
-`--tray-controls --mutation-tray-cursor` restores OS-pointer hit testing and must
-fail the native cursor placement check. The mouse checks position the real native cursor as a QA fixture and inject
-Windows button events; raw mouse-device movement is not reproduced by this
-setup. Gameplay deliberately locks the OS pointer at window center. The suite temporarily enables native mouse aim
+The steering checks position the real native aim object as a QA fixture and
+inject Windows button events; raw mouse-device movement is not reproduced by
+this setup. Shop purchases use middle-button chords and do not use those aim
+coordinates. Gameplay deliberately locks the OS pointer at window center. The suite temporarily enables native mouse aim
 in the owned QA profile and restores the previous preference bytes afterward.
 
 `--saved-controls` writes a P1 profile before starting the isolated client, covering
 native input-field initialization during module loading.
+
+`--mouse-shop` uses actual Windows wheel and mouse-button events without placing
+the cursor. It checks highlight browsing, native descriptions, purchase/reroll
+chords, short middle-button taps, held-button safety, independent P2 input and
+rebound P1 fire. Run with and without a saved P1 profile. The previous preview-6
+DLL fails the held-Inspect step; its mouse path requires pointer hit tests.
 
 `--death-effects` creates thrust effects through actual native ship input, then
 downs each pilot while breaking their shield. It verifies effect cleanup,

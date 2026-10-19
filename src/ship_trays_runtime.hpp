@@ -9,6 +9,17 @@ struct Tray {
  std::array<std::vector<RValue>,11> lists;std::array<RValue,6> counts;std::vector<Card> cards;
 };
 bool consume_confirm[3]{},consume_click[3]{},keyboard_focus[3]{};
+bool consume_mouse_fire[3]{};
+struct MouseGesture {
+ bool active=false,opened=false,used=false;unsigned long long since=0;
+ void Begin(bool was_open,unsigned long long now){active=true;opened=!was_open;used=false;since=now;}
+ bool Inspect(bool held,unsigned long long now,bool choosing) {
+  if(active&&held&&(now-since>=200||choosing))used=true;
+  return active&&held&&used;
+ }
+ bool Release(unsigned long long now){bool close=active&&!opened&&!used&&now-since<200;*this={};return close;}
+};
+MouseGesture mouse_gesture[3];
 double last_budget[3]{};unsigned long long bank_hint_until[3]{};
 Tray trays[3];int transaction=0,broker_id=-1,transaction_owner=0;bool rerolled=false;
 std::vector<int> children;unsigned long long generated=0,purchased=0,failed=0;
@@ -23,7 +34,7 @@ RValue Get(void* self,const char* name){return Builtin("variable_instance_get",{
 void Put(void* self,const char* name,const RValue& v){Builtin("variable_instance_set",{Ref(Id(self)),RValue(name),v});}
 bool Busy(){return transaction!=0;}
 bool IsOpen(int owner){return owner>=1&&owner<=2&&trays[owner].open;}
-void Reset(){for(auto& tray:trays)tray=Tray{};for(int owner=1;owner<=2;++owner){consume_confirm[owner]=consume_click[owner]=keyboard_focus[owner]=false;last_budget[owner]=0;bank_hint_until[owner]=0;}}
+void Reset(){for(auto& tray:trays)tray=Tray{};for(int owner=1;owner<=2;++owner){consume_confirm[owner]=consume_click[owner]=keyboard_focus[owner]=consume_mouse_fire[owner]=false;mouse_gesture[owner]={};last_budget[owner]=0;bank_hint_until[owner]=0;}}
 bool CombatStage(int owner){
  if(!ready||!globals||owner<1||owner>2||!Resolve(powers[owner]))return false;
  ndship::OwnerScope scope(owner);return Global(0x1af8938)>=1;
@@ -154,10 +165,12 @@ double observed_mx=0,observed_my=0,observed_w=0,observed_h=0;
 bool MouseTray(int owner){return owner==1&&(!p1_custom||p1_controls.Get().mouse_aim);}
 bool BlocksInput(int owner){return IsOpen(owner)&&(keyboard_focus[owner]||(qa_mode&&command.mutate_tray_input));}
 bool ConsumesClick(int owner){return owner>=1&&owner<=2&&consume_click[owner];}
+bool ConsumesMouseFire(int owner){return owner>=1&&owner<=2&&consume_mouse_fire[owner];}
 bool BlocksKey(int owner,int key){
  if(owner<1||owner>2||key==VK_ESCAPE)return false;
  if(BlocksInput(owner))return true;
  if(consume_confirm[owner]&&key==ndship::input::KeyFire)return true;
+ if(consume_mouse_fire[owner]&&!P1InputActive()&&key==VK_RBUTTON)return true;
  // Custom profiles filter physical LMB before directional/tank translation,
  // preserving unrelated keyboard/controller input bound to the same action.
  return consume_click[owner]&&!P1InputActive()&&key==VK_LBUTTON;
@@ -173,13 +186,12 @@ void Tick(){
  keyboard_focus[1]=keyboard_focus[2]=false;
  if(!ready||joining||transaction||ndship::lifecycle::IsTearingDown())return;
  auto controller=Resolve(controller_id);if(!controller)return;
- for(int owner=1;owner<=2;++owner)if(!HasShip(owner))trays[owner]=Tray{};
+ for(int owner=1;owner<=2;++owner)if(!HasShip(owner)){trays[owner]=Tray{};mouse_gesture[owner]={};consume_mouse_fire[owner]=false;}
  if(Read(controller,0x1b004b8,1)!=0||Read(controller,0x1af7718,0)!=0||!Builtin("window_has_focus").ToBoolean()||ndship::upgrade::SessionActive()||CountUI()!=0||Read(controller,ndship::build::ControllerCanLevel.cell,0)==0)return;
  double width=Builtin("display_get_gui_width").ToDouble(),height=Builtin("display_get_gui_height").ToDouble();
  double mx=Builtin("device_mouse_x_to_gui",{RValue(0)}).ToDouble(),my=Builtin("device_mouse_y_to_gui",{RValue(0)}).ToDouble();
- // enterGameplayMode locks the OS pointer at window center. The visible
- // native cursor integrates relative mouse deltas in world coordinates.
- // Use that same cursor for combat UI; never unlock or pause flight for a tray.
+ // Retain the native aim coordinates for steering diagnostics. Gameplay locks
+ // the OS pointer; shop selection uses highlight/chords and never these bounds.
  {
  ndship::OwnerScope mouse(1);
  auto cursor_value=Builtin("instance_find",{RValue(741),RValue(0)});auto cursor=Resolve((int)cursor_value.m_i64);
@@ -199,29 +211,35 @@ void Tick(){
  if(!qa_mode&&profile.device!=ndship::config::Device::Keyboard){XINPUT_STATE p{};if(XInputGetState(profile.controller_slot,&p)==ERROR_SUCCESS){pad=p.Gamepad.wButtons;axis=p.Gamepad.sThumbLY/32768.0;axis_x=p.Gamepad.sThumbLX/32768.0;if(p.Gamepad.bRightTrigger>30)pad|=ndship::config::RightTrigger;if(p.Gamepad.bLeftTrigger>30)pad|=ndship::config::LeftTrigger;}}
  auto action=[&](ndship::config::Action a){return (profile.device!=ndship::config::Device::Controller&&KeyDown(profile.Key(a)))||(pad&profile.Pad(a))!=0;};
  unsigned bits=((owner==1&&!p1_custom?KeyDown(VK_MBUTTON):action(ndship::config::Action::Upgrade))?2u:0u)|(action(ndship::config::Action::Fire)?4u:0u)|((action(ndship::config::Action::Up)||axis>.55)?8u:0u)|((action(ndship::config::Action::Down)||axis<-.55)?16u:0u)|(action(ndship::config::Action::Stabilize)?32u:0u)|(action(ndship::config::Action::Deploy)?64u:0u)|(action(ndship::config::Action::Construct2)?128u:0u)|(Builtin("mouse_check_button",{RValue(1)}).ToBoolean()?256u:0u)|((action(ndship::config::Action::Left)||axis_x<-.55)?512u:0u)|((action(ndship::config::Action::Right)||axis_x>.55)?1024u:0u);
- unsigned pressed=bits&~previous_bits[owner];previous_bits[owner]=bits;
+ const bool mouse_mode=MouseTray(owner);
+ // The gameplay pointer is hidden/locked. Mouse shops use an explicit middle
+ // button chord rather than invisible pointer hit tests. Use engine mouse state
+ // so forwarded input and the physical mouse share the same path.
+ if(mouse_mode){bits|=Builtin("mouse_check_button",{RValue(3)}).ToBoolean()?4096u:0u;bits|=Builtin("mouse_check_button",{RValue(2)}).ToBoolean()?2048u:0u;if(pad&profile.Pad(ndship::config::Action::Upgrade))bits|=8192u;}
+ unsigned released=previous_bits[owner]&~bits,pressed=bits&~previous_bits[owner];previous_bits[owner]=bits;
  if(!(bits&4))consume_confirm[owner]=false;
  if(!(bits&256))consume_click[owner]=false;
+ if(!(bits&2048))consume_mouse_fire[owner]=false;
   auto& tray=trays[owner];const bool requested=tray.requested;
   if(requested&&(!Eligible(owner)||Budget(owner)<=0||Read(Resolve(powers[owner]),0x1af7498,0)<=0))continue;
-  bool opening=requested||(pressed&2);tray.requested=false;
+  bool middle_toggle=mouse_mode&&((owner==1&&!p1_custom)||profile.Key(ndship::config::Action::Upgrade)==VK_MBUTTON);
+  bool opening=requested||((pressed&2)&&!middle_toggle)||(mouse_mode&&(pressed&8192));tray.requested=false;
+  auto now=GetTickCount64();auto& gesture=mouse_gesture[owner];
+  if(mouse_mode&&(pressed&4096)){gesture.Begin(tray.open,now);if(!tray.open)opening=true;}
+  if(mouse_mode&&(released&4096)&&gesture.Release(now)&&tray.open){tray.open=false;continue;}
   if(qa_mode&&command.tray==owner){command.tray=0;opening=true;}
-  bool chip=owner==1&&(!p1_custom||profile.mouse_aim)&&mx<width*.24&&my>height-195*height/1350&&my<height-155*height/1350;
-  if(chip&&(pressed&256)){opening=true;consume_click[owner]=true;}
   if(opening){if(!requested||!tray.open)Toggle(owner);continue;}
   if(!tray.open)continue;
   tray.inspect=false;
-  if(MouseTray(owner)){
-   if(Builtin("mouse_wheel_up").ToBoolean())tray.selected=(tray.selected+(int)tray.cards.size()-1)%(int)tray.cards.size();
-   if(Builtin("mouse_wheel_down").ToBoolean())tray.selected=(tray.selected+1)%(int)tray.cards.size();
-   auto g=Layout(owner,width,height);double scale=std::min(width/2400.0,height/1350.0);
-   if(my>=g.y-42*scale&&my<=g.y+42*scale){
-    for(int k=0;k<5;++k){int index=g.first+k;double cx=g.x+50*scale+k*g.row;
-     if(index<(int)tray.cards.size()&&std::abs(mx-cx)<=40*scale){tray.selected=index;tray.inspect=true;if(pressed&256){consume_click[owner]=true;Act(owner,1);break;}}
-    }
-   }else if(my>=g.y+78*scale&&my<=g.y+108*scale&&(pressed&256)){
-    if(mx>=g.x+g.w*.42&&mx<=g.x+g.w*.68){consume_click[owner]=true;Act(owner,2);}
-    else if(mx>=g.x+g.w*.72&&mx<=g.x+g.w&&Read(Resolve(powers[owner]),0x1af96c8,0)==8){consume_click[owner]=true;Act(owner,3);}
+  if(mouse_mode){
+   bool wheel_up=Builtin("mouse_wheel_up").ToBoolean(),wheel_down=Builtin("mouse_wheel_down").ToBoolean();
+   if((bits&4096)&&(wheel_up||wheel_down))gesture.used=true;
+   if(wheel_up)tray.selected=(tray.selected+(int)tray.cards.size()-1)%(int)tray.cards.size();
+   if(wheel_down)tray.selected=(tray.selected+1)%(int)tray.cards.size();
+   tray.inspect=gesture.Inspect((bits&4096)!=0,now,(pressed&(256|2048))!=0);
+   if(tray.inspect){
+    if(pressed&256){consume_click[owner]=true;gesture.used=true;Act(owner,1);continue;}
+    if(pressed&2048){consume_mouse_fire[owner]=true;gesture.used=true;Act(owner,KeyDown(VK_LSHIFT)?3:2);continue;}
    }
   }
   else{
@@ -283,9 +301,9 @@ void Draw(void* self,double width,double height){
   const auto rerolls=std::to_string((int)Read(Resolve(powers[owner]),0x1afa278,0));bool researcher=Read(Resolve(powers[owner]),0x1af96c8,0)==8;
   if(owner==1&&(!p1_custom||p1_controls.Get().mouse_aim)){
    double hint=HintOpacity(tray.hint_until,GetTickCount64());
-   if(hint>0)p.FittedText(g.x,g.y+84*scale,"Scroll / hover",secondary,text_scale,g.w*.4,0,hint);
-   p.FittedText(g.x+g.w*.45,g.y+84*scale,"Reroll "+rerolls,secondary,text_scale,g.w*.24);
-   if(researcher)p.FittedText(g.x+g.w*.75,g.y+84*scale,"Banish",secondary,text_scale,g.w*.25);
+   if(hint>0)p.FittedText(g.x,g.y+84*scale,"Scroll / hold middle + click",secondary,text_scale,g.w*.55,0,hint);
+   p.FittedText(g.x+g.w*.57,g.y+84*scale,(tray.inspect?"RMB reroll ":"Reroll ")+rerolls,secondary,text_scale,g.w*(researcher?.22:.43));
+   if(researcher)p.FittedText(g.x+g.w*.8,g.y+84*scale,tray.inspect?"Shift + RMB":"Banish",secondary,text_scale,g.w*.2);
   }else{
    std::string footer=Binding(ndship::config::Action::Formation,owner)+" + "+Binding(ndship::config::Action::Deploy,owner)+" reroll "+rerolls;
    if(researcher)footer+=" | "+Binding(ndship::config::Action::Construct2,owner)+" banish";
@@ -314,7 +332,7 @@ void Tick();void Draw(void*,double,double);
 void Trace(int counter){
  if(!CoopBalance::trace||!ready||transaction)return;
  for(int owner=1;owner<=2;++owner){auto& tray=trays[owner];ndship::OwnerScope scope(owner);
-  std::fprintf(CoopBalance::trace,"{\"kind\":\"tray\",\"counter\":%d,\"owner\":%d,\"open\":%d,\"selected\":%d,\"focus\":%d,\"mx\":%.3f,\"my\":%.3f,\"w\":%.3f,\"h\":%.3f,\"click\":%d,\"stage\":%.0f,\"budget\":%.0f,\"rerolls\":%.0f,\"generated\":%llu,\"purchased\":%llu,\"failed\":%llu,\"cards\":[",counter,owner,tray.open,tray.selected,keyboard_focus[owner],observed_mx,observed_my,observed_w,observed_h,consume_click[owner],Global(0x1af8938),Budget(owner),Read(Resolve(powers[owner]),0x1afa278,0),generated,purchased,failed);
+  std::fprintf(CoopBalance::trace,"{\"kind\":\"tray\",\"counter\":%d,\"owner\":%d,\"open\":%d,\"selected\":%d,\"focus\":%d,\"inspect\":%d,\"mouse_held\":%d,\"mouse_used\":%d,\"rightclick\":%d,\"mx\":%.3f,\"my\":%.3f,\"w\":%.3f,\"h\":%.3f,\"click\":%d,\"stage\":%.0f,\"budget\":%.0f,\"rerolls\":%.0f,\"generated\":%llu,\"purchased\":%llu,\"failed\":%llu,\"cards\":[",counter,owner,tray.open,tray.selected,keyboard_focus[owner],tray.inspect,mouse_gesture[owner].active,mouse_gesture[owner].used,consume_mouse_fire[owner],observed_mx,observed_my,observed_w,observed_h,consume_click[owner],Global(0x1af8938),Budget(owner),Read(Resolve(powers[owner]),0x1afa278,0),generated,purchased,failed);
   for(size_t i=0;i<tray.cards.size();++i)std::fprintf(CoopBalance::trace,"%s%d",i?",":"",(int)tray.cards[i].object.m_i64);
   std::fprintf(CoopBalance::trace,"],\"leaked_lists\":%llu,\"body\":%.0f,\"weapon\":%d,\"mod_count\":%d,\"acquired\":[",leaked_lists,Read(Resolve(powers[owner]),0x1af96c8), (int)Field(Resolve(powers[owner]),0x1af7898).m_i64,Builtin("ds_list_size",{Field(Resolve(powers[owner]),0x1af7678)}).ToInt32());
   auto mods=Field(Resolve(powers[owner]),0x1af7678);int n=Builtin("ds_list_size",{mods}).ToInt32();for(int i=0;i<n;++i){auto v=Builtin("ds_list_find_value",{mods,RValue(i)});std::fprintf(CoopBalance::trace,"%s%d",i?",":"",v.m_Kind==VALUE_REF?(int)v.m_i64:v.ToInt32());}

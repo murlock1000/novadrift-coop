@@ -88,6 +88,9 @@ try:
  if '--death-effects' in sys.argv:
   from qa_death_effects import run
   run(globals());report['status']='PASS';raise SystemExit(0)
+ if '--mouse-shop' in sys.argv:
+  from qa_mouse_shop import run
+  run(globals());report['status']='PASS';raise SystemExit(0)
  if '--stock-hud' in sys.argv and '--mutation-stock-hud' in sys.argv:
   from qa_stock_hud import run
   run(globals());raise RuntimeError('Shared-stock mutation unexpectedly completed')

@@ -119,9 +119,10 @@ def run(ns):
         rest()
         partner = dict(tray(2));shots = metrics()
         mouse('rightDown')
-        # Native tray geometry at the QA client's 16:9 GUI size.
-        point(90/2400, (1350-285)/1350)
-        wait(lambda: abs(tray(1)['mx']-72)<5 and abs(tray(1)['my']-852)<5, 3)
+        # The gameplay pointer is hidden: choose the highlighted offer with
+        # an explicit mouse chord, without aiming at the shop.
+        mouse('middleDown')
+        wait(lambda:tray(1)['inspect'])
         stage = tray(1)['stage']
         mouse('leftDown')
         control(engine_input=1, engine_key=ord('I'))
@@ -134,7 +135,7 @@ def run(ns):
         check('consumed shop click does not thrust P1 until released',
               not p1_thrust() and tray(1)['click']==1,
               {'ship': rows()[-1], 'thrust':p1_thrust(), 'click':tray(1)['click']})
-        mouse('leftUp');mouse('rightUp')
+        mouse('leftUp');mouse('rightUp');mouse('middleUp')
         control(engine_input=1)
         rest();mouse('leftDown');time.sleep(.5)
         check('P1 thrust returns on the next fresh mouse press',
@@ -148,13 +149,12 @@ def run(ns):
             time.sleep(1.3)
             control(tray=1, engine_input=1);wait(lambda: tray(1)['open'])
             rest();stage=tray(1)['stage'];shots=metrics()
-            point(90/2400, (1350-285)/1350)
-            mouse('rightDown');mouse('leftDown')
+            mouse('rightDown');mouse('middleDown');wait(lambda:tray(1)['inspect']);mouse('leftDown')
             wait(lambda: tray(1)['stage']==stage+1)
             wait(lambda: metrics()['shots1']>shots['shots1'])
             check('rebound P1 mouse shop click consumes thrust but keeps fire',
                   not p1_thrust() and tray(1)['click']==1, {'ship':rows()[-1], 'thrust':p1_thrust(), 'click':tray(1)['click']})
-            mouse('leftUp');mouse('rightUp');rest();point(.5,.1);mouse('leftDown')
+            mouse('leftUp');mouse('rightUp');mouse('middleUp');rest();point(.5,.1);mouse('leftDown')
             wait(lambda:math.hypot(rows()[-1]['vx1'],rows()[-1]['vy1'])>.5,3)
             check('rebound P1 mouse thrust resumes after selection',
                   math.hypot(rows()[-1]['vx1'],rows()[-1]['vy1'])>.5, rows()[-1])
@@ -167,6 +167,6 @@ def run(ns):
         check('Escape remains a shared pause after shop input',True,metrics())
     finally:
         if ns['process'].poll() is None:
-            mouse('leftUp');mouse('rightUp');control(engine_input=1)
+            mouse('leftUp');mouse('rightUp');mouse('middleUp');control(engine_input=1)
     ui('close');ns['process'].wait(timeout=20)
     check('clean owned tray-controls shutdown',ns['process'].returncode==0,ns['process'].returncode)

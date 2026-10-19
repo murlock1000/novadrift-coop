@@ -14,9 +14,15 @@ P1 uses the copied game's controls. P2's existing profile remains compatible.
 Mouse aims, left mouse button thrusts, and right mouse button fires. These are
 the copied game's mouse bindings.
 
-Middle mouse opens/closes personal upgrades. Scroll to browse,
-hover a hex to inspect, and left click to choose. Reroll and Researcher banish
-controls appear in the strip.
+Tap middle mouse to open or close personal upgrades. Scroll to highlight an
+item. Hold middle mouse to read its description, then left-click while still
+holding middle to choose it. No pointer is needed during flight.
+
+While holding middle, right-click to reroll. As Researcher, hold Left Shift too
+and right-click to banish the highlighted mod. Only a fresh click acts: holding
+thrust or fire before Inspect does not buy or reroll. Ordinary left/right clicks
+remain thrust/fire when middle is released. Release a purchase click before
+pressing it again to thrust.
 
 ## Player 2 · gold
 
@@ -58,10 +64,11 @@ augments both use the compact strips and configured controls.
 
 Each player keeps their own upgrade choices and rerolls. Closing a strip
 preserves its offers and spends nothing. Visible strips leave both ships
-controllable. P1's clicks on shop items consume only the left click until
+controllable. P1's purchase chord consumes only the left click until
 release; firing remains available. Holding Inspect temporarily directs that
 player's keyboard/controller to the strip while their ship drifts under normal
-physics and remains vulnerable. The teammate keeps full control. Escape remains
+physics and remains vulnerable. P1's middle-button Inspect keeps flight active;
+its purchase/reroll clicks are consumed until release. The teammate keeps full control. Escape remains
 a shared pause. Both native build
 inventories appear separately; click P1 or P2, or press Tab, to switch the
 central stats. Hover an icon for the native item information.

@@ -40,16 +40,11 @@ def ui(action,keys='ENTER',hold=120):
   '-TargetPid',str(pid),'-ExpectedSha256',sha,'-Action',action,'-Keys',keys,'-HoldMs',str(hold),'-AllowBackground'],capture_output=True,text=True,timeout=20)
  if r.returncode:raise RuntimeError(r.stderr.strip())
  return json.loads(r.stdout.lstrip('\ufeff'))
-def middle():
- for event in ('middleDown','middleUp'):
-  r=subprocess.run([POWERSHELL,'-NoProfile','-ExecutionPolicy','Bypass','-File',windows(ROOT/'tools/game_window.ps1'),
-   '-TargetPid',str(pid),'-ExpectedSha256',sha,'-Action','mouse','-MouseEvent',event],capture_output=True,text=True,timeout=20)
-  if r.returncode:
-   if event=='middleDown':
-    # Release an injected button even if the helper fails after sending it.
-    subprocess.run([POWERSHELL,'-NoProfile','-ExecutionPolicy','Bypass','-File',windows(ROOT/'tools/game_window.ps1'),
-     '-TargetPid',str(pid),'-ExpectedSha256',sha,'-Action','mouse','-MouseEvent','middleUp'],capture_output=True,timeout=20)
-   raise RuntimeError(r.stderr.strip())
+def mouse(event):
+ r=subprocess.run([POWERSHELL,'-NoProfile','-ExecutionPolicy','Bypass','-File',windows(ROOT/'tools/game_window.ps1'),
+  '-TargetPid',str(pid),'-ExpectedSha256',sha,'-Action','mouse','-MouseEvent',event],capture_output=True,text=True,timeout=20)
+ if r.returncode:raise RuntimeError(r.stderr.strip())
+def middle():mouse('middleClick')
 def trays():return [r for r in read_jsonl(runtime/'ship-balance.jsonl') if r.get('kind')=='tray']
 def latest_trays():
  rows=trays()
@@ -103,7 +98,11 @@ try:
  def both_shops():
   rows=latest_trays()
   return rows if all(r.get('open') and r.get('cards') for r in rows) else None
- report['trays']=wait(both_shops,45,'both native compact shops open after first shared level')
+ # A stationary ship need not earn XP. Use actual combat input to collect the
+ # first level rather than depending on a stray asteroid awarding it for us.
+ mouse('rightDown');mouse('leftDown')
+ try:report['trays']=wait(both_shops,55,'both native compact shops open after first earned level')
+ finally:mouse('leftUp');mouse('rightUp')
  capture()
  # Real player key closes/reopens P2's tray; no QA commands are used.
  count=len(trays());ui('press','F7')
@@ -133,6 +132,9 @@ finally:
  if proc and proc.poll() is None:
   try:
    if pid:
+    for event in ('leftUp','rightUp','middleUp'):
+     try:mouse(event)
+     except Exception:pass
     ui('close')
     try:proc.wait(timeout=20)
     except subprocess.TimeoutExpired:

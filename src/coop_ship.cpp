@@ -31,7 +31,7 @@ using namespace Aurie;
 using namespace YYTK;
 namespace nd=novadrift_native;
 namespace {
-namespace Trays {bool Busy();bool IsOpen(int);bool BlocksInput(int);bool BlocksKey(int,int);bool ConsumesClick(int);void Reset();void Request(int);void Capture(void*,const char*);void Tick();void Draw(void*,double,double);void Trace(int);}
+namespace Trays {bool Busy();bool IsOpen(int);bool BlocksInput(int);bool BlocksKey(int,int);bool ConsumesClick(int);bool ConsumesMouseFire(int);void Reset();void Request(int);void Capture(void*,const char*);void Tick();void Draw(void*,double,double);void Trace(int);}
 namespace PauseBuild {void Capture(void*,const char*);void Draw(void*,double,double);nd::RValue* Owned(nd::Script,void*,void*,nd::RValue*,int,nd::RValue**);}
 YYTKInterface* api=nullptr; AurieModule* module_self=nullptr; nd::Access access{};
 TRoutine engine_keyboard_check=nullptr;
@@ -363,6 +363,7 @@ void SampleKeyboard(int owner=2){
  };
  auto down=[&](int key){
   if(key==VK_LBUTTON&&Trays::ConsumesClick(owner))return false;
+  if(key==VK_RBUTTON&&Trays::ConsumesMouseFire(owner))return false;
   if(qa_mode)return command.engine_input?engine_down(key):key==command.key;
   return (GetAsyncKeyState(key)&0x8000)!=0||engine_down(key);
  };

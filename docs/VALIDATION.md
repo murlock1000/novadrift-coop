@@ -1,5 +1,28 @@
 # Validation record
 
+## P1 shop without a pointer (2026-10-19)
+
+DLL `79b8f151ed30c3e066f0d9e80a74b788118dac989d28fa21580d27ed60e63944`
+passed 35 native mouse-shop checks both with and without saved P1 bindings.
+Real Windows wheel and button events select the highlighted item without any
+cursor-placement fixture. Tests cover native item descriptions, deliberate
+purchase/reroll chords, held thrust/fire, middle-button taps, P2 Inspect
+isolation and an unrelated rebound P1 fire key. Reviewed game-client captures
+show the existing native hexes, fonts and item descriptions. Original saves
+were unchanged. The prior preview-6 DLL failed the held-Inspect step after
+successfully browsing with the wheel.
+The same DLL also passed the updated 33-check shop-control regression with
+saved P1 bindings, including mouse chords, P2 keyboard selection, continued
+flight/fire and shared pause.
+The ordinary early-launch check also passed with `qa_focus=0`: both native HUDs,
+compact shops, short middle-button taps, P2's F7 and rotation/thrust worked.
+It now uses real combat input to earn the first level rather than waiting for
+a stationary ship to receive incidental XP.
+
+The new interaction replaces the earlier hover/hit-test approach. Its tests
+could position the game's aim object, which proved that hit tests used those
+coordinates but did not prove a usable visible pointer existed during flight.
+
 ## Normal-launch UI and P2 steering (2026-10-19)
 
 DLL `1bc5c9fcad1e7047790cda34b10ccbb213b0d5d0c99bb24c43c37a4ed4825900`

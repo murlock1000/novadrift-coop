@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory=$true)][int]$TargetPid,
     [Parameter(Mandatory=$true)][string]$ExpectedSha256,
     [ValidateSet('status','focus','press','close','mouse')][string]$Action='status',
-    [ValidateSet('leftDown','leftUp','rightDown','rightUp','middleDown','middleUp')][string]$MouseEvent='leftUp',
+    [ValidateSet('leftDown','leftUp','rightDown','rightUp','middleDown','middleUp','middleClick','wheelUp','wheelDown')][string]$MouseEvent='leftUp',
     [string]$Keys='ENTER',
     [ValidateRange(10,5000)][int]$HoldMs=120,
     [ValidateRange(0,5000)][int]$DelayMs=200,
@@ -19,8 +19,8 @@ public static class NovaWindow {
  [StructLayout(LayoutKind.Sequential)] public struct MouseInput {public int dx,dy;public uint data,flags,time;public UIntPtr extra;}
  [StructLayout(LayoutKind.Sequential)] public struct Input {public uint type;public MouseInput mouse;}
  [DllImport("user32.dll")] static extern uint SendInput(uint count,Input[] inputs,int size);
- public static void MouseButton(uint flags) {
-  var input=new Input();input.mouse.flags=flags;
+ public static void MouseButton(uint flags,int data=0) {
+  var input=new Input();input.mouse.flags=flags;input.mouse.data=unchecked((uint)data);
   if(SendInput(1,new[]{input},Marshal.SizeOf(typeof(Input)))!=1)throw new Exception("Owned mouse SendInput failed");
  }
  public delegate bool EnumProc(IntPtr hwnd, IntPtr data);
@@ -86,7 +86,12 @@ if($Action -eq 'press' -or $Action -eq 'focus' -or $Action -eq 'close' -or $Acti
   $null=OwnedProcess
   if([NovaWindow]::GetForegroundWindow() -ne $hwnd) {throw 'Mouse input requires the verified game in foreground'}
   $flags=@{leftDown=2;leftUp=4;rightDown=8;rightUp=16;middleDown=32;middleUp=64}
-  [NovaWindow]::MouseButton([uint32]$flags[$MouseEvent])
+  if($MouseEvent -eq 'middleClick'){
+   [NovaWindow]::MouseButton(32)
+   try {Start-Sleep -Milliseconds 70} finally {[NovaWindow]::MouseButton(64)}
+  }elseif($MouseEvent -eq 'wheelUp'){[NovaWindow]::MouseButton(2048,120)
+  }elseif($MouseEvent -eq 'wheelDown'){[NovaWindow]::MouseButton(2048,-120)
+  }else{[NovaWindow]::MouseButton([uint32]$flags[$MouseEvent])}
   $mouseInfo=[ordered]@{event=$MouseEvent}
 
  }
