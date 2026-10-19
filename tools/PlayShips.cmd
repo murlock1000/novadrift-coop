@@ -15,7 +15,7 @@ if /I "%~1"=="diagnostics" (
   echo Usage: PlayShips.cmd [fullscreen^|windowed] [diagnostics]
   exit /b 2
 )
-shift
+shift /1
 goto options
 :launch
 > "%~dp0ship-control.txt" (

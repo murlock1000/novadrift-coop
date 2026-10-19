@@ -34,6 +34,8 @@ def run(ns):
         return rows(True)[-1]
     def p1_thrust():
         return ns['read_jsonl'](ns['runtime']/'ship-ui.jsonl')[-1]['p1_thrust']
+    def p2_thrust():
+        return ns['read_jsonl'](ns['runtime']/'ship-ui.jsonl')[-1]['p2_thrust']
     def snapshot():
         return [dict(tray(1)), dict(tray(2))]
     def same_offers(before):
@@ -104,10 +106,14 @@ def run(ns):
         # Keep confirmation held: only Fire is consumed; steering must return.
         control(engine_input=1, engine_key=ord('N'), beacon_center=2)
         time.sleep(.2)
-        control(engine_input=1, engine_key=ord('N'), engine_key2=ord('I'))
-        time.sleep(.6)
+        resume = control(engine_input=1, engine_key=ord('N'), engine_key2=ord('I'))
+        # Wait for this input command and measured movement rather than
+        # sampling at an arbitrary wall-clock offset. The permanent input
+        # latch mutation still cannot satisfy this bounded movement check.
+        wait(lambda: rows()[-1]['command'] == resume and
+             math.hypot(rows()[-1]['vx2'], rows()[-1]['vy2']) > .5, 3)
         check('flight resumes after choosing without a blanket input latch',
-              math.hypot(rows()[-1]['vx2'], rows()[-1]['vy2']) > .5, rows()[-1])
+              p2_thrust() and math.hypot(rows()[-1]['vx2'], rows()[-1]['vy2']) > .5, rows()[-1])
         control(engine_input=1)
         # Mouse purchase consumes only LMB. RMB fire and P2 movement remain live.
         rest()
@@ -126,7 +132,8 @@ def run(ns):
         check('mouse purchase preserves firing and teammate thrust',
               tray(2)['stage'] == partner['stage'] and math.hypot(rows()[-1]['vx2'], rows()[-1]['vy2']) > .5, rows()[-1])
         check('consumed shop click does not thrust P1 until released',
-              math.hypot(rows()[-1]['vx1'], rows()[-1]['vy1']) < .3, rows()[-1])
+              not p1_thrust() and tray(1)['click']==1,
+              {'ship': rows()[-1], 'thrust':p1_thrust(), 'click':tray(1)['click']})
         mouse('leftUp');mouse('rightUp')
         control(engine_input=1)
         rest();mouse('leftDown');time.sleep(.5)

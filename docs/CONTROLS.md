@@ -22,7 +22,9 @@ controls appear in the strip.
 
 | Action | Default |
 |---|---|
-| Up / left / down / right | I / J / K / L |
+| Thrust forward | I |
+| Rotate left / right | J / L |
+| Down in upgrade menus | K (while holding O) |
 | Fire / confirm upgrade | N |
 | Stabilize / close upgrades | Right Shift |
 | Blink | Right Ctrl |
@@ -40,7 +42,10 @@ Opening a strip keeps flight controls active. Hold **O** (the configured
 Formation/Inspect control) to browse with movement keys, choose with **N**,
 reroll with **U**, or banish with **8**. Release Inspect to fly again. The same
 modifier applies to keyboard/controller P1 using that player's bindings.
-Directional steering turns toward the pressed direction and retains native momentum.
+P2 defaults to three-button flight: thrust forward and rotate left/right.
+K only navigates menus; it does not brake or reverse. Right Shift remains the
+separate Stabilize action. Directional steering is an optional setting that
+turns toward the pressed direction and retains native momentum.
 
 F6 pauses play and opens the editor. `ConfigureControls.cmd` opens it separately; `ConfigureP2.cmd` remains an alias.
 Choose directional/tank steering, rebind keys or configure controller mappings.

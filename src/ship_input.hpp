@@ -162,7 +162,7 @@ inline constexpr unsigned ActionButtons[config::ActionCount] = {
 // QA's semantic SampleBot bypasses this entire physical profile translation.
 template<class IsDown>
 inline unsigned ConfiguredButtons(const config::Profile& profile, IsDown&& down,
-                                  double native_angle, const ControllerFrame& pad = {}) noexcept {
+                                  double native_angle, const ControllerFrame& pad = {}, bool forward_only = false) noexcept {
     const bool keyboard = profile.device != config::Device::Controller;
     const bool controller = profile.device != config::Device::Keyboard && pad.connected;
     bool actions[config::ActionCount]{};
@@ -184,8 +184,14 @@ inline unsigned ConfiguredButtons(const config::Profile& profile, IsDown&& down,
     if (profile.steering == config::Steering::Tank) {
         if (x < -0.05) buttons |= TurnLeft;
         if (x > 0.05) buttons |= TurnRight;
-        if (y < -0.05) buttons |= Thrust;
-        if (y > 0.05) buttons |= Stabilize;
+        if(forward_only){
+            // P2 flies with thrust and two rotation buttons. Down remains
+            // available to menus; braking uses its separate Stabilize action.
+            if(actions[0] || py < -0.05)buttons |= Thrust;
+        }else{
+            if (y < -0.05) buttons |= Thrust;
+            if (y > 0.05) buttons |= Stabilize;
+        }
     } else if (x*x+y*y > 0.0025 && std::isfinite(native_angle)) {
         const double desired = std::atan2(-y,x) * (180.0/3.14159265358979323846);
         const double error = std::remainder(desired-native_angle,360.0);
@@ -260,8 +266,8 @@ public:
     }
     template<class IsDown>
     void SampleConfigured(std::uint64_t tick, const config::Profile& profile, IsDown&& down,
-                          double native_angle, const ControllerFrame& pad = {}) noexcept {
-        Update(tick,ConfiguredButtons(profile,down,native_angle,pad));
+                          double native_angle, const ControllerFrame& pad = {}, bool forward_only = false) noexcept {
+        Update(tick,ConfiguredButtons(profile,down,native_angle,pad,forward_only));
     }
     template<class IsDown>
     void SampleConfiguredMenu(std::uint64_t tick, const config::Profile& profile, IsDown&& down,

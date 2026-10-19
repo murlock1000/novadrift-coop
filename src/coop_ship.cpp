@@ -60,6 +60,7 @@ nd::Script original_gain_level=nullptr,original_restart=nullptr;
 using CodeEvent=FunctionWrapper<bool(CInstance*,CInstance*,CCode*,RValue*,int)>;
 bool level_award_inflight=false,pause_stats_rendering=false;
 bool spawning_powers=false,spawning_player=false,ready=false,joining=false;
+std::atomic<bool> hooks_ready{false};
 int respawn_owner=0;
 int controller_id=-1;
 struct HealthEffect {int owner=0;double width=1;};
@@ -183,6 +184,7 @@ bool Respawn(int owner,double x,double y){
  joining=false;CoopFlow::rescues[owner].Reset();hint_until[owner]=GetTickCount64()+2500;Log("Native teammate revive: preserved build, half hull, temporary protection");return true;
 }
 void Join(){
+ if(!hooks_ready.load(std::memory_order_acquire))return;
  if(ready&&!Resolve(ships[2])&&Resolve(powers[2])&&Resolve(ships[1])){
   if(qa_mode)Respawn(2,Read(Resolve(ships[1]),nd::Fields::X)+70,Read(Resolve(ships[1]),nd::Fields::Y));return;
  }
@@ -259,7 +261,12 @@ void CodeCallback(CodeEvent& event){
   if(ndship::upgrade::SessionActive())owner=ndship::upgrade::CurrentMenuOwner();
   else if(ready&&!HasShip(1)&&HasShip(2))owner=2;
  }
- if(asset==377&&name&&std::strstr(name,"_Create_"))controller_id=self_id;
+ // A normal launch can create Controller while hooks are still installing.
+ // Its regular events are authoritative too; never depend on seeing Create.
+ if(asset==377&&self_id>=100000){
+  if(controller_id!=self_id){char text[128];std::snprintf(text,sizeof text,"Controller adopted from live event id=%d",self_id);Log(text);}
+  controller_id=self_id;
+ }
  if(asset==828&&ndship::upgrade::SessionActive())owner=ndship::upgrade::CurrentMenuOwner();
  if(!self_owner&&owner&&self_id>=100000&&(ndship::assets::IsTaggable(asset)||asset==828)){
   owners[self_id]=owner;ndship::RegisterOwnedInstance(self,owner,self_id);
@@ -360,7 +367,7 @@ void SampleKeyboard(int owner=2){
   return (GetAsyncKeyState(key)&0x8000)!=0||engine_down(key);
  };
  if(ndship::upgrade::SessionActive())buttons.SampleConfiguredMenu(tick,profile,down,pad);
- else buttons.SampleConfigured(tick,profile,down,Read(Resolve(ships[owner]),nd::Fields::Angle,0),pad);
+ else buttons.SampleConfigured(tick,profile,down,Read(Resolve(ships[owner]),nd::Fields::Angle,0),pad,owner==2);
 }
 
 nd::RValue* Input(nd::Script original,ndship::input::Edge edge,void* s,void* o,nd::RValue* r,int n,nd::RValue** a){
@@ -742,6 +749,10 @@ void DrawWorldOverlays(void* self,double width,double height){
  }
 }
 void DrawGUI(void*s,void*o){
+ if(Asset(s)==377){
+  if(controller_id!=Id(s)){char text[128];std::snprintf(text,sizeof text,"Controller adopted from native DrawGUI id=%d",Id(s));Log(text);}
+  controller_id=Id(s);
+ }
  ndship::perf::MarkFrame();ReloadControls();OpenControlEditor();
  int primary=ready&&!HasShip(1)&&HasShip(2)?2:1;
  ndship::OwnerScope canonical(primary);
@@ -779,8 +790,8 @@ void DrawGUI(void*s,void*o){
  Trays::Draw(s,gui_width,gui_height);PauseBuild::Draw(s,gui_width,gui_height);++hud_frames;
  if(presentation){static ULONGLONG at=0;auto now=GetTickCount64();if(now-at>=100){at=now;
   RValue color1(-1),color2(-1);if(auto ship=Resolve(ships[1]))api->GetBuiltin("image_blend",(CInstance*)ship,NULL_INDEX,color1);if(auto ship=Resolve(ships[2]))api->GetBuiltin("image_blend",(CInstance*)ship,NULL_INDEX,color2);
-  std::fprintf(presentation,"{\"time\":%llu,\"command\":%d,\"hull1\":%.6f,\"hullmax1\":%.6f,\"shield1\":%.6f,\"shieldmax1\":%.6f,\"hull2\":%.6f,\"hullmax2\":%.6f,\"shield2\":%.6f,\"shieldmax2\":%.6f,\"color1\":%d,\"color2\":%d,\"marker1\":%llu,\"marker2\":%llu,\"native_rect_hidden\":%llu,\"hud_frames\":%llu,\"menu_owner\":%d,\"menu\":%d,\"fire_key\":%d,\"steering\":%d,\"key\":%d,\"engine_key\":%d,\"engine_input\":%d,\"p2_fire\":%d,\"p1_thrust\":%d,\"hint1\":%.6f,\"hint2\":%.6f,\"upgrade_hint\":%.6f,\"native_hud\":%d,\"native_frames\":%llu,\"bar1\":%.6f,\"bar2\":%.6f,\"src1_x\":%.6f,\"src1_y\":%.6f,\"src1_w\":%.6f,\"src1_h\":%.6f,\"src2_x\":%.6f,\"src2_y\":%.6f,\"src2_w\":%.6f,\"src2_h\":%.6f,\"dst1_x\":%.6f,\"dst1_y\":%.6f,\"dst1_w\":%.6f,\"dst1_h\":%.6f,\"dst2_x\":%.6f,\"dst2_y\":%.6f,\"dst2_w\":%.6f,\"dst2_h\":%.6f}\n",
-   now,command.counter,state.players[0].hull,state.players[0].hull_max_effective,state.players[0].shield,state.players[0].shield_max_effective,state.players[1].hull,state.players[1].hull_max_effective,state.players[1].shield,state.players[1].shield_max_effective,color1.ToInt32(),color2.ToInt32(),marker_draws[1],marker_draws[2],native_rect_hidden,hud_frames,state.upgrade_owner,state.upgrade_menu,controls.Get().Key(ndship::config::Action::Fire),(int)controls.Get().steering,command.key,command.engine_key,command.engine_input,keyboard.Check(ndship::input::KeyFire,ndship::input::Edge::Held),p1_keyboard.Check(ndship::input::KeyThrust,ndship::input::Edge::Held),state.hint_alpha[0],state.hint_alpha[1],state.upgrade_hint_alpha,native_ok,native_hud_frames,
+  std::fprintf(presentation,"{\"time\":%llu,\"command\":%d,\"hull1\":%.6f,\"hullmax1\":%.6f,\"shield1\":%.6f,\"shieldmax1\":%.6f,\"hull2\":%.6f,\"hullmax2\":%.6f,\"shield2\":%.6f,\"shieldmax2\":%.6f,\"color1\":%d,\"color2\":%d,\"marker1\":%llu,\"marker2\":%llu,\"native_rect_hidden\":%llu,\"hud_frames\":%llu,\"menu_owner\":%d,\"menu\":%d,\"fire_key\":%d,\"steering\":%d,\"key\":%d,\"engine_key\":%d,\"engine_input\":%d,\"p2_fire\":%d,\"p2_thrust\":%d,\"p1_thrust\":%d,\"hint1\":%.6f,\"hint2\":%.6f,\"upgrade_hint\":%.6f,\"native_hud\":%d,\"native_frames\":%llu,\"bar1\":%.6f,\"bar2\":%.6f,\"src1_x\":%.6f,\"src1_y\":%.6f,\"src1_w\":%.6f,\"src1_h\":%.6f,\"src2_x\":%.6f,\"src2_y\":%.6f,\"src2_w\":%.6f,\"src2_h\":%.6f,\"dst1_x\":%.6f,\"dst1_y\":%.6f,\"dst1_w\":%.6f,\"dst1_h\":%.6f,\"dst2_x\":%.6f,\"dst2_y\":%.6f,\"dst2_w\":%.6f,\"dst2_h\":%.6f}\n",
+   now,command.counter,state.players[0].hull,state.players[0].hull_max_effective,state.players[0].shield,state.players[0].shield_max_effective,state.players[1].hull,state.players[1].hull_max_effective,state.players[1].shield,state.players[1].shield_max_effective,color1.ToInt32(),color2.ToInt32(),marker_draws[1],marker_draws[2],native_rect_hidden,hud_frames,state.upgrade_owner,state.upgrade_menu,controls.Get().Key(ndship::config::Action::Fire),(int)controls.Get().steering,command.key,command.engine_key,command.engine_input,keyboard.Check(ndship::input::KeyFire,ndship::input::Edge::Held),keyboard.Check(ndship::input::KeyThrust,ndship::input::Edge::Held),p1_keyboard.Check(ndship::input::KeyThrust,ndship::input::Edge::Held),state.hint_alpha[0],state.hint_alpha[1],state.upgrade_hint_alpha,native_ok,native_hud_frames,
    native_bars[1].hull_back>0?native_bars[1].hull_fill/native_bars[1].hull_back:0,native_bars[2].hull_back>0?native_bars[2].hull_fill/native_bars[2].hull_back:0,
    native_hud_result.source[1].x,native_hud_result.source[1].y,native_hud_result.source[1].w,native_hud_result.source[1].h,
    native_hud_result.source[2].x,native_hud_result.source[2].y,native_hud_result.source[2].w,native_hud_result.source[2].h,
@@ -831,5 +842,7 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  if(!Hook("Ship.DrawGUI",0x984ec0,(void*)DrawGUI,(void**)&original_draw_gui))return AURIE_MODULE_INITIALIZATION_FAILED;
  TRoutine input_detours[]={InputBuiltin<0>,InputBuiltin<1>,InputBuiltin<2>,InputBuiltin<3>,InputBuiltin<4>,InputBuiltin<5>,InputBuiltin<6>,InputBuiltin<7>,InputBuiltin<8>,InputBuiltin<9>};
  for(int i=0;i<10;++i)if(!HookBuiltin(InputBuiltins[i],input_detours[i],original_input_builtin[i]))return AURIE_MODULE_INITIALIZATION_FAILED;
- auto status=api->CreateCallback(module,EVENT_OBJECT_CALL,(void*)CodeCallback,0);Log(AurieSuccess(status)?"full ship module ready":"full ship callback FAILED");return status;
+ auto status=api->CreateCallback(module,EVENT_OBJECT_CALL,(void*)CodeCallback,0);
+ if(AurieSuccess(status)){Log("all native hooks installed; co-op joining enabled");hooks_ready.store(true,std::memory_order_release);}
+ Log(AurieSuccess(status)?"full ship module ready":"full ship callback FAILED");return status;
 }

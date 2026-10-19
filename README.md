@@ -60,14 +60,14 @@ Your original Steam installation and saves stay separate from the co-op copy.
 
 | | Player 1 · red | Player 2 · gold |
 |---|---|---|
-| Move | Mouse aim + left button thrust | I / J / K / L |
+| Move | Mouse aim + left button thrust | I thrust · J / L rotate |
 | Fire | Right mouse button | N |
 | Open upgrades | Middle mouse button | F7 |
 | Inspect an upgrade | Hover its hex | Hold O |
 | Choose an upgrade | Left click | Hold O + N |
 
 Opening upgrades keeps flight controls active. P2 holds O to browse with I/J/K/L,
-then releases it to fly.
+then releases it to fly. K moves down in menus; it does not brake the ship.
 
 Press **F6** to configure either player, or open `ConfigureControls.cmd`. **Escape** pauses the game for both players.
 See [all controls](docs/CONTROLS.md) for rerolls, constructs and controller mappings.

@@ -17,6 +17,7 @@ public static class GameCapture {
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
  [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr h,bool altTab);
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
+ [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point p);
  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h,out Rect r);
  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref Point p);
  [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
@@ -44,6 +45,16 @@ try{
   Start-Sleep -Milliseconds 50
  }
  if($r.right -lt 640 -or $r.bottom -lt 360){throw 'Game client is minimized or too small for visual review'}
+ # A foreground window can still extend behind the taskbar or offscreen.
+ # Refuse that capture before reading pixels from another application.
+ foreach($dx in @(1,[int]($r.right/2),($r.right-2))){
+  foreach($dy in @(1,[int]($r.bottom/2),($r.bottom-2))){
+   $sample=New-Object GameCapture+Point;$sample.x=$point.x+$dx;$sample.y=$point.y+$dy
+   [uint32]$pixelOwner=0
+   $null=[GameCapture]::GetWindowThreadProcessId([GameCapture]::WindowFromPoint($sample),[ref]$pixelOwner)
+   if($pixelOwner -ne $TargetPid){throw 'Game client is clipped or occluded; capture refused'}
+  }
+ }
  $bitmap=New-Object Drawing.Bitmap($r.right,$r.bottom);$graphics=[Drawing.Graphics]::FromImage($bitmap)
  try{
   $graphics.CopyFromScreen($point.x,$point.y,0,0,$bitmap.Size)

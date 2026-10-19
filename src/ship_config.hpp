@@ -46,7 +46,7 @@ inline constexpr PadChoice PadChoices[] = {
     {L"Left stick click",0x40},{L"Right stick click",0x80},{L"Back",0x20}
 };
 struct Profile {
-    Steering steering = Steering::Directional;
+    Steering steering = Steering::Tank;
     Device device = Device::Keyboard;
     int controller_slot = 1; // XInput zero-based slot; UI labels controllers1..4.
     double deadzone = 0.22;
@@ -98,7 +98,8 @@ inline std::string Help(const Profile& profile, bool menu = false) {
     const auto movement=pad?"left stick":label(Action::Up)+"/"+label(Action::Left)+"/"+label(Action::Down)+"/"+label(Action::Right);
     const auto prefix=pad?"P2 controller "+std::to_string(profile.controller_slot+1)+": ":"P2: ";
     if(menu)return prefix+movement+" navigate | "+label(Action::Fire)+" select | "+label(Action::Stabilize)+" back | "+label(Action::Deploy)+" reroll | "+label(Action::Construct2)+" banish";
-    return prefix+movement+(profile.steering==Steering::Tank?" thrust/turn/brake":" move")+" | "+label(Action::Fire)+" fire | "+label(Action::Blink)+" blink | "+label(Action::Deploy)+" deploy | F6 controls";
+    const auto flight=profile.steering==Steering::Tank?label(Action::Up)+" thrust | "+label(Action::Left)+"/"+label(Action::Right)+" rotate":movement+" move";
+    return prefix+flight+" | "+label(Action::Fire)+" fire | "+label(Action::Blink)+" blink | "+label(Action::Deploy)+" deploy | F6 controls";
 }
 inline bool Validate(const Profile& profile, std::string& error) {
     if (profile.steering != Steering::Directional && profile.steering != Steering::Tank) error = "Unknown steering mode.";

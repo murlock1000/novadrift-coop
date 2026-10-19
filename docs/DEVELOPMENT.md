@@ -80,6 +80,7 @@ python3 tools/qa_ships.py --tray-controls --saved-controls
 python3 tools/qa_ships.py --death-effects
 python3 tools/qa_launcher.py
 python3 tools/qa_launcher.py --remote-wrapper
+NOVACOOP_TEST_RUNTIME=/path/to/isolated/runtime python3 tools/qa_bootstrap.py
 ```
 
 `--remote-wrapper` simulates inherited app identity for a local process-chain
@@ -87,6 +88,21 @@ check; it is not a Steam connection test. Mutation modes in `qa_ships.py` should
 fail their targeted ownership, native UI or input-sharing assertion. Review each
 script's `--help` before using mutation or performance runs. Reports and captures
 remain under ignored `local/`.
+
+`qa_bootstrap.py` deliberately starts the run before module initialization has
+finished. It uses the ordinary launcher with `qa_focus=0`, diagnostic logging
+and fullscreen capture, without injecting QA commands. It checks two native
+HUDs, both compact shops, middle-mouse/F7 closing and reopening, and actual J/L rotation and I
+thrust while the shops are visible. A run that misses the early-start condition
+fails rather than claiming coverage. Run it only against an isolated QA copy.
+
+The portable control contract checks P2's three-button mapping, menu-down,
+special actions, P1 braking and optional directional steering:
+
+```sh
+g++ -std=c++17 -Wall -Wextra -pedantic tools/three_button_controls_contract.cpp -o local/build/three_button_controls_contract
+local/build/three_button_controls_contract
+```
 
 The upgrade-flow regression also has three expected failures:
 

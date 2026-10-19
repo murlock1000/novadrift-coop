@@ -14,7 +14,7 @@ struct WindowState {
     std::array<cfg::Profile,3> profiles;std::array<std::filesystem::path,3> paths;int player=2;
     std::filesystem::path path;
     HWND window=nullptr,mode=nullptr,device=nullptr,slot=nullptr,deadzone=nullptr,status=nullptr,description=nullptr,player_select=nullptr,mouse_aim=nullptr;
-    std::array<HWND,cfg::ActionCount> keys{},pads{};
+    std::array<HWND,cfg::ActionCount> keys{},pads{},labels{};
     HFONT font=nullptr; int capturing=-1; bool saved=false;
 } ui;
 std::wstring Wide(const std::string& text) { return std::wstring(text.begin(),text.end()); }
@@ -41,7 +41,10 @@ void Item(HWND combo,const wchar_t* text) { SendMessageW(combo,CB_ADDSTRING,0,re
 void SetStatus(const std::wstring& text) { SetWindowTextW(ui.status,text.c_str()); }
 void Description() {
     const int mode=static_cast<int>(SendMessageW(ui.mode,CB_GETCURSEL,0,0));
-    SetWindowTextW(ui.description,mode==0?L"Directional: movement keys / left stick choose a heading. The ship turns and accelerates using its normal physics.":L"Tank: Up thrusts, Left / Right turn, Down brakes. Your build determines which special actions are available.");
+    const bool pilot2=ui.player==2&&mode==1;
+    SetWindowTextW(ui.description,mode==0?L"Directional: movement keys / left stick choose a heading. The ship turns and accelerates using its normal physics.":pilot2?L"Thrust forward and rotate left / right. Down is for menus only. Stabilize is a separate special action.":L"Tank: Up thrusts, Left / Right turn, Down brakes. Your build determines which special actions are available.");
+    const wchar_t* flight[]={L"Thrust forward",L"Rotate left",L"Menu down",L"Rotate right"};
+    for(int i=0;i<4;++i)if(ui.labels[i])SetWindowTextW(ui.labels[i],pilot2?flight[i]:cfg::ActionLabels[i]);
 }
 void Populate() {
     SendMessageW(ui.mode,CB_SETCURSEL,static_cast<int>(ui.profile.steering),0);
@@ -111,7 +114,7 @@ LRESULT CALLBACK Procedure(HWND window,UINT message,WPARAM w,LPARAM l) {
         }
         for(std::size_t i=0;i<cfg::ActionCount;++i) {
             const int column=static_cast<int>(i/10),row=static_cast<int>(i%10),x=20+460*column,y=215+38*row;
-            Add(L"STATIC",cfg::ActionLabels[i],0,x,y+5,153,25);
+            ui.labels[i]=Add(L"STATIC",cfg::ActionLabels[i],0,x,y+5,153,25);
             ui.keys[i]=Add(L"BUTTON",L"",BS_PUSHBUTTON|WS_TABSTOP,x+155,y,118,28,KeyBase+static_cast<int>(i));
             ui.pads[i]=Add(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_TABSTOP|WS_VSCROLL,x+280,y,145,300,PadBase+static_cast<int>(i));
             for(const auto& choice:cfg::PadChoices)Item(ui.pads[i],choice.label);

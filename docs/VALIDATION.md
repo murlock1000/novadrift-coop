@@ -1,5 +1,35 @@
 # Validation record
 
+## Normal-launch UI and P2 steering (2026-10-19)
+
+DLL `1bc5c9fcad1e7047790cda34b10ccbb213b0d5d0c99bb24c43c37a4ed4825900`
+passed an ordinary early-launch regression with `qa_focus=0`, diagnostics on,
+and no injected QA commands. P1 was created before module initialization
+finished. P2 joined after hook installation, both native health bars rendered,
+and both compact shops opened on the first shared level. Real middle-mouse and
+F7 input closed and reopened each player's shop. J and L rotated P2's native ship in opposite directions,
+and I accelerated it with the shops visible. The fullscreen game-client capture
+was reviewed. Original save fingerprints were unchanged.
+
+The previous DLL `e40f336baf1863fa3d10fd49f28d0adb6c150df6a6f177d31fc0b501cb008916`
+failed the same early-launch HUD assertion: its Controller Create was missed,
+two ships joined during initialization, and native HUD capture remained inactive.
+Earlier suites waited for module ready before starting a run and missed this case.
+
+The new P2 defaults and translation passed 60 portable checks covering thrust,
+rotation at seven headings, menu-only K, I+K, separate special actions,
+unchanged P1 braking and optional directional steering. The compiled Windows
+control editor also passed its separate-profile self-test. The active user's
+existing P2 profile was switched to tank steering without replacing bindings.
+
+The same DLL passed the 33-check native shop-control regression, including saved
+P1 controls, independent firing, deliberate mouse and keyboard purchases, input
+consumption and flight after purchasing. The test now waits for the current
+command and measured motion after a purchase; its click-consumption assertion
+checks the actual thrust input rather than mistaking weapon recoil for thrust.
+The old visible-tray input-blocking mutation still failed the first acceleration
+assertion. The native upgrade-flow suite passed all 25 checks on this DLL.
+
 ## Death crashes, HUD and gameplay recording (2026-10-19)
 
 DLL `21986c00abe4b491bbe54ed074f82820ad5e3e1708203a49fd8d7405f3e2dfca`

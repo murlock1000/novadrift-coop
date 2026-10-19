@@ -2,6 +2,8 @@
 
 | Issue | Status |
 |---|---|
+| Normal launch has one health bar and unresponsive compact shops | Fixed: recover the live Controller from regular events if its Create ran during loading, and wait for all hooks before joining P2. |
+| P2 movement turns toward four directions rather than rotating the ship | Fixed: P2 defaults to I thrust and J/L rotation. K is menu-only; Stabilize retains its separate binding. |
 | Opening compact shops disables both ships' controls | Fixed: visible trays leave flight active; hold Inspect to operate keyboard/controller trays. Mouse purchases consume only the shop click. |
 | Mouse hover/clicks miss compact offers during combat | Fixed: hit testing follows the game's visible software cursor while the native Windows pointer stays locked. |
 | Launching with a saved P1 profile crashes during module initialization | Fixed: the runner base is established before resolving the profile's native input fields. |

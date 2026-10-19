@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory=$true)][int]$TargetPid,
     [Parameter(Mandatory=$true)][string]$ExpectedSha256,
     [ValidateSet('status','focus','press','close','mouse')][string]$Action='status',
-    [ValidateSet('leftDown','leftUp','rightDown','rightUp')][string]$MouseEvent='leftUp',
+    [ValidateSet('leftDown','leftUp','rightDown','rightUp','middleDown','middleUp')][string]$MouseEvent='leftUp',
     [string]$Keys='ENTER',
     [ValidateRange(10,5000)][int]$HoldMs=120,
     [ValidateRange(0,5000)][int]$DelayMs=200,
@@ -85,12 +85,12 @@ if($Action -eq 'press' -or $Action -eq 'focus' -or $Action -eq 'close' -or $Acti
  if($Action -eq 'mouse') {
   $null=OwnedProcess
   if([NovaWindow]::GetForegroundWindow() -ne $hwnd) {throw 'Mouse input requires the verified game in foreground'}
-  $flags=@{leftDown=2;leftUp=4;rightDown=8;rightUp=16}
+  $flags=@{leftDown=2;leftUp=4;rightDown=8;rightUp=16;middleDown=32;middleUp=64}
   [NovaWindow]::MouseButton([uint32]$flags[$MouseEvent])
   $mouseInfo=[ordered]@{event=$MouseEvent}
 
  }
- $map=@{ENTER=13;ESCAPE=27;SPACE=32;UP=38;DOWN=40;LEFT=37;RIGHT=39;TAB=9;F8=119}
+ $map=@{ENTER=13;ESCAPE=27;SPACE=32;UP=38;DOWN=40;LEFT=37;RIGHT=39;TAB=9;F7=118;F8=119}
  if($Action -eq 'press') {foreach($name in $Keys.Split(',')) {
   $null=OwnedProcess
   [uint32]$owner=0
