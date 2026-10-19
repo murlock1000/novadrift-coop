@@ -7,7 +7,7 @@
 #include "ship_context.hpp"
 namespace ndship::assets {
 struct Asset { int index; const char* name; };
-inline constexpr std::array<Asset,320> Owned{{
+inline constexpr std::array<Asset,321> Owned{{
     {1,"gAmp"},
     {2,"gArchitect"},
     {3,"gAssault"},
@@ -206,6 +206,7 @@ inline constexpr std::array<Asset,320> Owned{{
     {362,"oConstructAlly"},
     {363,"oConstructAllyStandard"},
     {364,"oConstructDrone"},
+    {365,"oConstructedEffect"},
     {366,"oConstructMine"},
     {374,"oConstructSuper"},
     {375,"oConstructSwarm"},

@@ -12,11 +12,12 @@ Play Together.
 - Upgrade choices can be saved for later and used during combat.
 - A larger arena, more enemies in regular waves, and enemies that target both players.
 - Revive a teammate at their beacon without resetting their build.
-- The game's HUDs, upgrade artwork and descriptions, with red and gold player colors.
+- Separate native health, ammo and construct displays, with red and gold player colors.
 
 ## Upgrades
 
-Small upgrade strips sit beside each player's HUD, leaving the arena visible.
+Starting weapons, shields and bodies use the game's full-screen picker.
+After those choices, small upgrade strips sit beside each player's HUD, leaving the arena visible.
 Both players can browse at once, or one can keep fighting while the other chooses.
 Hover a hex or hold Inspect to reveal its [full description](docs/screenshots/upgrade-inspect.png). Combat stays live.
 
@@ -60,7 +61,6 @@ Your original Steam installation and saves stay separate from the co-op copy.
 Press **F6** to configure either player, or open `ConfigureControls.cmd`. **Escape** pauses the game for both players.
 See [all controls](docs/CONTROLS.md) for rerolls, constructs and controller mappings.
 
-Initial weapon, shield and body choices use the original selection screen.
 Two-player save/resume is not supported. See [tested features and known limits](docs/VALIDATION.md).
 
 ---

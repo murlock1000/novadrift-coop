@@ -72,6 +72,9 @@ try:
  joined=wait(lambda: next((r for r in reversed(rows()) if r.get('ready') and r['p2']>=100000),None))
  check('two distinct native player ships',joined['p1']!=joined['p2'] and joined['p1_asset']==joined['p2_asset']==603,joined)
  check('two distinct build owners',joined['b1']!=joined['b2'] and joined['hull1']>0 and joined['hull2']>0,joined)
+ if '--stock-hud' in sys.argv and '--mutation-stock-hud' in sys.argv:
+  from qa_stock_hud import run
+  run(globals());raise RuntimeError('Shared-stock mutation unexpectedly completed')
  if '--dual-controls' in sys.argv:
   from qa_dual_controls import run
   run(globals());report['status']='PASS';raise SystemExit(0)
@@ -91,7 +94,7 @@ try:
   check('P1 banked ordinary choice does not block P2 starter choices',owned(1)['budget']==owned(2)['budget']==1 and owned(1)['stage']>=4 and owned(2)['stage']>=4,{'first':owned(1),'second':owned(2)})
   ui('close');process.wait(timeout=20);check('clean owned banked-starter shutdown',process.returncode==0,process.returncode)
   report['status']='PASS';raise SystemExit(0)
- if '--trays' in sys.argv or '--overlays' in sys.argv:
+ if any(flag in sys.argv for flag in ('--trays','--overlays','--stock-hud')):
   def trayrows():return [r for r in read_jsonl(runtime/'ship-balance.jsonl') if r.get('kind')=='tray']
   def tray(owner):return next((r for r in reversed(trayrows()) if r['owner']==owner),None)
   # Preserve and exercise all three native starter stages for each build.
@@ -103,6 +106,9 @@ try:
    control(confirm=1);time.sleep(.2);control()
    wait(lambda:rows(True)[-1]['ui']==0 and rows(True)[-1]['menu_session']==0,20)
    check('native starter stage preserved for both ships',tray(1)['stage']==tray(2)['stage']==stage+1,{'first':tray(1),'second':tray(2)})
+  if '--stock-hud' in sys.argv:
+   from qa_stock_hud import run
+   run(globals());report['status']='PASS';raise SystemExit(0)
   control(augment=8,owner=2);wait(lambda:tray(2)['weapon']==269)
   control(level=3);wait(lambda:tray(1)['budget']>=3 and tray(2)['budget']>=3)
   if '--overlays' in sys.argv:

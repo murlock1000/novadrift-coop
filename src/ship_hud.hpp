@@ -33,7 +33,7 @@ struct State {
     std::string gameplay_hint; // optional actual profile help, below top-right gear
     // Zero queries current GUI dimensions. Layout is designed for2400x1350.
     double width=0,height=0;
-    std::array<double,2> life_x{},life_y{},life_width{};
+    std::array<double,2> life_x{},life_y{},life_width{},stock_y{};
     std::array<double,2> hint_alpha{}; // brief join/redeploy identity, supplied by caller
     double controls_alpha=0,upgrade_hint_alpha=0; // caller owns timing/fades
     int font=-1; // built-in default font; caller may supply a suitable font asset
@@ -131,7 +131,7 @@ inline void Identity(Painter& p,const State& state,int owner,double x,double y,
     const char* title=owner==2?"P2":"P1";
     if(!player.joined)title=owner==2?"P2  -  F8 TO JOIN":"P1";
     else if(!player.alive)title=owner==2?"P2  -  DOWN":"P1  -  DOWN";
-    p.FittedText(x,y,title,accent,t,width,0,alpha);
+    p.FittedText(x,state.stock_y[owner-1]>0?state.stock_y[owner-1]-110*s:y,title,accent,t,width,0,alpha);
 }
 inline void UpgradeBanner(Painter& p,const State& state,const Layout& layout,double width) {
     const int owner=state.upgrade_owner==2?2:1,accent=PlayerColor(owner);
@@ -156,7 +156,7 @@ inline void GameplayHint(Painter& p,const State& state,const Layout& layout,doub
     const double alpha=Opacity(state.controls_alpha);if(alpha<=0)return;
     const double s=layout.scale,t=FontScale(state,layout),x=layout.right_x,w=layout.panel_width;
     const double hintx=state.life_width[1]>0?state.life_x[1]+state.life_width[1]:x+w;
-    const double hinty=state.life_width[1]>0?state.life_y[1]-50*s:height-95*s;
+    const double hinty=state.life_width[1]>0?state.stock_y[1]>0?state.stock_y[1]-110*s:state.life_y[1]-50*s:height-95*s;
     p.Text(hintx,hinty,"F6 CONTROLS",Color(225,225,225),0.65*t,2,alpha);
     if(state.upgrade_menu||state.gameplay_hint.empty())return;
     const auto& lines=p.Wrap(state.gameplay_hint,w,0.85*t);

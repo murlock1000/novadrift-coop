@@ -13,6 +13,8 @@ using System;using System.Runtime.InteropServices;
 public static class GameCapture {
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+ [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+ [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
  [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr h,bool altTab);
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h,out Rect r);
@@ -28,6 +30,7 @@ if((Get-FileHash -LiteralPath $p.Path -Algorithm SHA256).Hash -ne $ExpectedSha25
 $h=[IntPtr]$GameWindowHandle;[uint32]$owner=0
 $null=[GameCapture]::GetWindowThreadProcessId($h,[ref]$owner)
 if($owner -ne $TargetPid){throw 'Window is not owned by the verified game'}
+if([GameCapture]::IsIconic($h)){$null=[GameCapture]::ShowWindow($h,9)}
 if([GameCapture]::GetForegroundWindow() -ne $h){$null=[GameCapture]::SetForegroundWindow($h);[GameCapture]::SwitchToThisWindow($h,$true)}
 for($i=0;$i -lt 20 -and [GameCapture]::GetForegroundWindow() -ne $h;$i++){Start-Sleep -Milliseconds 50}
 if([GameCapture]::GetForegroundWindow() -ne $h){throw 'Owned game must be foreground for capture'}
@@ -35,7 +38,11 @@ $old=[GameCapture]::SetThreadDpiAwarenessContext([IntPtr](-4))
 if($old -eq [IntPtr]::Zero){throw 'Physical-pixel coordinates unavailable'}
 try{
  $r=New-Object GameCapture+Rect;$point=New-Object GameCapture+Point
- if(-not [GameCapture]::GetClientRect($h,[ref]$r) -or -not [GameCapture]::ClientToScreen($h,[ref]$point)){throw 'Client bounds unavailable'}
+ for($attempt=0;$attempt -lt 20;$attempt++){
+  if(-not [GameCapture]::GetClientRect($h,[ref]$r) -or -not [GameCapture]::ClientToScreen($h,[ref]$point)){throw 'Client bounds unavailable'}
+  if($r.right -ge 640 -and $r.bottom -ge 360){break}
+  Start-Sleep -Milliseconds 50
+ }
  if($r.right -lt 640 -or $r.bottom -lt 360){throw 'Game client is minimized or too small for visual review'}
  $bitmap=New-Object Drawing.Bitmap($r.right,$r.bottom);$graphics=[Drawing.Graphics]::FromImage($bitmap)
  try{

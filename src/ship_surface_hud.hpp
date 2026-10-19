@@ -5,13 +5,14 @@
 #include <cmath>
 #include <initializer_list>
 #include <utility>
+#include <vector>
 #include <YYToolkit/YYTK_Shared.hpp>
 
 namespace ndship::surface_hud {
 struct Rect { double x=0,y=0,w=0,h=0; };
 struct Result {
     bool ok=false;
-    std::array<Rect,3> dest{},source{}; // owner indices 1 and 2
+    std::array<Rect,3> dest{},source{},stock_source{},stock_dest{}; // owner indices 1 and 2
     std::array<int,3> surface{{-1,-1,-1}};
 };
 class NativeSurfaceRenderer {
@@ -96,10 +97,11 @@ public:
     // RenderOwner(owner) executes the original native GUI once. RegionRead(owner)
     // runs immediately afterwards and returns the native health/status rectangle
     // in GUI coordinates (cache it before restoring any Controller overlay).
-    // Caller owns all game-state snapshots and ownership scopes in RenderOwner.
-    template<class RenderOwner,class RegionRead>
+    // StockRead returns the native weapon/construct strip bounds. Caller owns
+    // all game-state snapshots and ownership scopes in RenderOwner.
+    template<class RenderOwner,class RegionRead,class StockRead>
     Result Capture(YYTK::YYTKInterface* api,YYTK::CInstance* self,double w,double h,
-                   RenderOwner&& renderOwner,RegionRead&& regionRead,int primary,double scale){
+                   RenderOwner&& renderOwner,RegionRead&& regionRead,StockRead&& stockRead,int primary,double scale,bool shareStock=false){
         Result result;
         if(!Initialize(api)||!std::isfinite(w)||!std::isfinite(h)||w<1||h<1||w>32768||h>32768||
            !std::isfinite(scale)||scale<=0||primary<1||primary>2)return result;
@@ -124,14 +126,29 @@ public:
             renderOwner(owner);
             result.source[owner]=Clipped(regionRead(owner),w,h);
             if(!Finite(result.source[owner]))return result;
+            result.stock_source[owner]=Clipped(stockRead(owner),w,h);
         }
         entry.Matrices();entry.Drawing();
         // Premultiplied surface pixels must not be multiplied by alpha again.
         Call(Blend,One,InvSrcAlpha,One,InvSrcAlpha);Call(SetColor,0xffffff);Call(SetAlpha,1.0);
         const Rect crop=result.source[primary];
-        // Canonical GUI outside the native health/status box, exactly once.
-        const std::array<Rect,4> outside{{{0,0,w,crop.y},{0,crop.y+crop.h,w,h-crop.y-crop.h},
-            {0,crop.y,crop.x,crop.h},{crop.x+crop.w,crop.y,w-crop.x-crop.w,crop.h}}};
+        // Remove both native widget regions from the shared GUI. Subtracting
+        // rectangles also handles overlapping source bounds without double draws.
+        std::vector<Rect> outside{{0,0,w,h}};
+        for(Rect cut:{crop,result.stock_source[primary]}){
+            if(!Finite(cut))continue;
+            std::vector<Rect> next;
+            for(Rect part:outside){
+                double l=std::max(part.x,cut.x),t=std::max(part.y,cut.y);
+                double r=std::min(part.x+part.w,cut.x+cut.w),b=std::min(part.y+part.h,cut.y+cut.h);
+                if(l>=r||t>=b){next.push_back(part);continue;}
+                next.push_back({part.x,part.y,part.w,t-part.y});
+                next.push_back({part.x,b,part.w,part.y+part.h-b});
+                next.push_back({part.x,t,l-part.x,b-t});
+                next.push_back({r,t,part.x+part.w-r,b-t});
+            }
+            outside=std::move(next);
+        }
         for(auto part:outside)Piece(surfaces_[primary],part,part);
         const double margin=(std::min)(48*scale,w/4),maxWidth=(std::max)(1.0,(w-3*margin)/2);
         const double bottom=(std::min)(h,crop.y+crop.h);
@@ -140,6 +157,13 @@ public:
             const double dw=source.w*fit,dh=source.h*fit;
             result.dest[owner]={owner==1?margin:w-margin-dw,bottom-dh,dw,dh};
             Piece(surfaces_[owner],source,result.dest[owner]);result.surface[owner]=surfaces_[owner];
+            const Rect stock=result.stock_source[owner];
+            if(Finite(stock)){
+                const double stockFit=std::min(1.0,maxWidth/stock.w);
+                const double sw=stock.w*stockFit,sh=stock.h*stockFit;
+                result.stock_dest[owner]={owner==1?margin:w-margin-sw,result.dest[owner].y-10*scale-sh,sw,sh};
+                Piece(surfaces_[shareStock?primary:owner],stock,result.stock_dest[owner]);
+            }
         }
         result.ok=true;return result;
     }

@@ -72,6 +72,7 @@ python3 tools/qa_ships.py --presentation-controls
 python3 tools/qa_ships.py --polish
 python3 tools/qa_ships.py --trays
 python3 tools/qa_ships.py --overlays
+python3 tools/qa_ships.py --stock-hud
 python3 tools/qa_ships.py --starter-bank
 python3 tools/qa_ships.py --dual-controls
 python3 tools/qa_launcher.py

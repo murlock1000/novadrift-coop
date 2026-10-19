@@ -2,7 +2,7 @@
 
 ## Native co-op
 
-The current ship DLL passed a 37-check bounded native regression: two real Player
+An earlier ship build passed a 37-check bounded native regression: two real Player
 instances, independent builds/upgrades, shared XP, input isolation, survivor
 Escape pause/resume, and native game-over confirmation/restart. Original saves
 were unchanged. Earlier mutation checks exercised failure detection for ownership,
@@ -181,3 +181,22 @@ ships, with normal alpha blending and restored GPU state. The progress fill is
 6% opacity, the outline pulses between 24–32%, and the smaller center icon is
 40%. Reviewed 1080p captures include each survivor directly over the beacon.
 Both outer-edge beacons remain visible and revive the correct build.
+
+
+## Ammo and construct HUD (2026-10-19)
+
+Each player's native weapon reserves and mine, turret, drone and ally icons now
+sit above their own health bars. Native counts, readiness masks, assembly meters
+and construction flashes use the corresponding build. Configured direct-slot
+key labels replace the original P1 bindings in P2's strip. The single-player
+construct tutorial is suppressed during co-op.
+
+The updated DLL passed **25 native checks** at 1920×1080, comparing opaque
+interiors from each owner's rendered source with the actual game client.
+The run exercised P2 mine deployment, both upgrade strips, P2 revival and
+surviving P2 after P1 died. A deliberate shared-strip mutation failed P2's
+native-pixel assertion while P1's display matched. Original saves were unchanged. Native reserve updates and flash animation are held only during QA
+screenshot capture so their state cannot advance between the two images. This is HUD coverage for those fixtures, not every late-game build.
+
+The README revival image is a fresh game-client capture with the full native
+beacon visible inside the arena; its gold outline is checked in the image.

@@ -41,6 +41,7 @@ unsigned long long marker_draws[3]{},native_rect_hidden=0,hud_frames=0;
 std::unordered_set<int> hidden_tutorial_effects;
 int obsolete_tutorial_scope=0;
 bool ObsoleteAdvice(void*);
+bool StockEffectCaptured();
 std::string gameplay_help=ndship::config::Help(ndship::config::Profile{}),menu_help=ndship::config::Help(ndship::config::Profile{},true);
 ULONGLONG performance_at=0;
 int ships[3]{-1,-1,-1}, powers[3]{-1,-1,-1};
@@ -69,7 +70,7 @@ int upgrade_hint_owner=0,ui_primary=1;bool upgrade_was_open=false;
 void ResetNativeUI(){hidden_tutorial_effects.clear();p2_ui_valid=false;ui_primary=1;hint_until[1]=hint_until[2]=upgrade_hint_until=0;upgrade_was_open=false;upgrade_hint_owner=0;}
 double HintOpacity(ULONGLONG until,ULONGLONG now){return until>now?std::min(1.0,(until-now)/1000.0):0.0;}
 std::string last_commands;
-struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0,deferred_upgrade=0,mutate_beacon=0,beacon_edge=0; } command;
+struct Commands { int counter=0,join=0,thrust=0,left=0,right=0,fire=0,qa_focus=0,augment=0,owner=2,level=0,screen=0,mutate=0,upgrade=0,confirm=0,kill=0,restart=0,xp=0,diagnostics=0,perf=0,key=0,damage=0,configure=0,nativehud=0,mutate_hud=0,engine_input=0,engine_key=0,mutate_sharing=0,balance=0,balance_mutate=0,rescue_mode=0,rescue_hold=0,tray=0,tray_action=0,tray_pick=0,collision=0,native_augment=0,tray_fail=0,tray_enemy=0,deferred_upgrade=0,mutate_beacon=0,beacon_edge=0,beacon_center=0,mutate_stock=0,freeze=0; } command;
 void Log(const char* t){if(log_file){std::fprintf(log_file,"[%llu] %s\n",GetTickCount64(),t);std::fflush(log_file);}}
 bool Readable(std::uintptr_t p,std::size_t n){MEMORY_BASIC_INFORMATION m{};return p>=0x10000&&p<0x7fffffffffffULL&&n<0x10000&&VirtualQuery((void*)p,&m,sizeof m)&&m.State==MEM_COMMIT&&!(m.Protect&(PAGE_NOACCESS|PAGE_GUARD))&&p+n<=(std::uintptr_t)m.BaseAddress+m.RegionSize;}
 int Id(void* p){return p&&Readable((std::uintptr_t)p,0xc8)&&*(int*)((char*)p+0x7c)==1?*(int*)((char*)p+0xbc):-1;}
@@ -124,7 +125,7 @@ void CommandsRead(bool startup=false){
  Commands c;std::istringstream lines(text);std::string line;
  while(std::getline(lines,line)){std::replace(line.begin(),line.end(),'=',' ');std::istringstream e(line);std::string key;int value;if(!(e>>key>>value))continue;
  #define KEY(k) if(key==#k)c.k=value;
- KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy) KEY(deferred_upgrade) KEY(mutate_beacon) KEY(beacon_edge)
+ KEY(counter) KEY(join) KEY(thrust) KEY(left) KEY(right) KEY(fire) KEY(qa_focus) KEY(augment) KEY(owner) KEY(level) KEY(screen) KEY(mutate) KEY(upgrade) KEY(confirm) KEY(kill) KEY(restart) KEY(xp) KEY(diagnostics) KEY(perf) KEY(key) KEY(damage) KEY(configure) KEY(nativehud) KEY(mutate_hud) KEY(engine_input) KEY(engine_key) KEY(mutate_sharing) KEY(balance) KEY(balance_mutate) KEY(rescue_mode) KEY(rescue_hold) KEY(tray) KEY(tray_action) KEY(tray_pick) KEY(collision) KEY(native_augment) KEY(tray_fail) KEY(tray_enemy) KEY(deferred_upgrade) KEY(mutate_beacon) KEY(beacon_edge) KEY(beacon_center) KEY(mutate_stock) KEY(freeze)
  #undef KEY
  }
  if(qa_mode&&api&&c.engine_key!=command.engine_key){
@@ -257,10 +258,14 @@ void CodeCallback(CodeEvent& event){
   (std::strstr(name,"_Step_")||std::strstr(name,"_Alarm_"))&&ObsoleteAdvice(self);
  if(asset==571&&obsolete_tutorial_scope&&name&&std::strstr(name,"_Create_"))hidden_tutorial_effects.insert(self_id);
  if(obsolete_generic)++obsolete_tutorial_scope;
- {ndship::TargetScope target(attention);event.Call();}
+ // QA captures compare native surfaces with presented pixels. Hold native
+ // simulation events while drawing continues, avoiding a recharge mask changing
+ // between the surface export and the OS client capture. Normal play never uses it.
+ const bool frozen=qa_mode&&command.freeze&&name&&(std::strstr(name,"_Step_")||std::strstr(name,"_Alarm_")||std::strstr(name,"_Collision_")||std::strstr(name,"_Other_"));
+ {ndship::TargetScope target(attention);if(frozen)event.Override(true);else event.Call();}
  if(name&&std::strcmp(name,"gml_Object_oBackground_Draw_0")==0)CoopFlow::DrawBackground(self,input_frame.load(std::memory_order_relaxed));
  if(obsolete_generic){--obsolete_tutorial_scope;if(Resolve(self_id)==self){RValue hidden(false);api->SetBuiltin("visible",self,NULL_INDEX,hidden);}}
- if(asset==377&&name&&std::strstr(name,"_Step_0")){if(p1_custom){if(p1_controls.Get().mouse_aim)ndship::Unbind(1,741);else ndship::BindEmpty(1,741);}CoopFlow::Tick();Trays::Tick();}
+ if(asset==377&&name&&std::strstr(name,"_Step_0")){if(p1_custom){if(p1_controls.Get().mouse_aim)ndship::Unbind(1,741);else ndship::BindEmpty(1,741);}if(!frozen)CoopFlow::Tick();Trays::Tick();}
  if(ready&&owner&&name){
   if(ndship::hud::IsShipVisualAsset(asset)&&std::strstr(name,"_Create_"))ndship::hud::TintShipVisual(api,self,owner);
 
@@ -371,6 +376,7 @@ void Stimuli(){
  if(command.deferred_upgrade){int owner=command.deferred_upgrade;command.deferred_upgrade=0;auto c=Resolve(controller_id);if(c){ndship::OwnerScope scope(owner);Script(0x358560,c);}}
  if(command.damage){int owner=command.owner;auto b=Resolve(powers[owner]);if(b){access.set(b,nd::Fields::Hull,std::max(1.0,Read(b,nd::Fields::Hull,100)-command.damage));access.set(b,0x1af7fd8,std::max(0.0,Read(b,0x1af7fd8,0)-command.damage));}command.damage=0;}
  if(command.beacon_edge>=1&&command.beacon_edge<=2){int owner=command.beacon_edge;command.beacon_edge=0;if(auto ship=Resolve(ships[owner])){access.set(ship,nd::Fields::X,Global(0x1af7428)+Global(0x1af7468)*(owner==2?.03:.97));access.set(ship,nd::Fields::Y,Global(0x1af74a8)+Global(0x1af7418)*.5);access.set(ship,nd::Fields::HSpeed,0);access.set(ship,nd::Fields::VSpeed,0);}}
+ if(command.beacon_center>=1&&command.beacon_center<=2){int owner=command.beacon_center;command.beacon_center=0;for(int pilot=1;pilot<=2;++pilot)if(auto ship=Resolve(ships[pilot])){access.set(ship,nd::Fields::X,Global(0x1af7428)+Global(0x1af7468)*(pilot==owner?.45:.65));access.set(ship,nd::Fields::Y,Global(0x1af74a8)+Global(0x1af7418)*.42);access.set(ship,nd::Fields::HSpeed,0);access.set(ship,nd::Fields::VSpeed,0);}}
  if(command.kill){int owner=command.kill;command.kill=0;auto b=Resolve(powers[owner]);if(b){access.set(b,0x1af7f98,0);access.set(b,nd::Fields::Hull,0);}}
  if(command.tray_enemy){command.tray_enemy=0;ndship::OwnerScope world(0);auto enemy=Builtin("instance_create_depth",{RValue(Global(0x1af7428)+100),RValue(Global(0x1af74a8)+100),RValue(0.0),RValue(252)});auto e=Resolve((int)enemy.m_i64);if(e){access.set(e,nd::Fields::HSpeed,1);access.set(e,nd::Fields::VSpeed,.5);}}
  if(command.native_augment>0){int asset=command.native_augment,owner=command.owner;command.native_augment=0;ndship::OwnerScope scope(owner);auto ship=Resolve(ships[owner]);nd::RValue args[4]{};args[0].real=Read(ship,nd::Fields::X,0);args[1].real=Read(ship,nd::Fields::Y,0);args[2].kind=15;args[2].integer=0x0100000000000000ULL|(unsigned)asset;args[3].kind=5;nd::RValue* argv[]={args,args+1,args+2,args+3};nd::RValue out{};out.kind=5;((nd::Script)(access.base+0x3a2d60))(ship,ship,&out,4,argv);}
@@ -470,8 +476,12 @@ nd::RValue* UIPositions(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){return U
 nd::RValue* UIRefresh(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){return UIScript(original_ui_refresh,s,o,r,n,a);}
 ndship::surface_hud::NativeSurfaceRenderer native_hud;
 ndship::surface_hud::Result native_hud_result;
-std::array<ndship::surface_hud::Rect,3> native_life_region{};
+std::array<ndship::surface_hud::Rect,3> native_life_region{},native_stock_region{};
+nd::Event original_stock_effect_draw=nullptr;
+void StockEffectDraw(void*s,void*o){if(!StockEffectCaptured())original_stock_effect_draw(s,o);}
 int native_capture_owner=0;
+int native_stock_effects[3]{};
+bool StockEffectCaptured(){return ready&&!command.nativehud&&native_hud_result.ok;}
 unsigned long long native_hud_frames=0;
 struct NativeBarState{double hull_back=0,hull_fill=0,shield_back=0,shield_fill=0;};
 NativeBarState native_bars[3];
@@ -512,6 +522,13 @@ bool ObsoleteText(const RValue& text){
 bool ObsoleteAdvice(void* self){return CompactPresentation()&&ObsoleteText(Field(self,0x1b01048));}
 void GenericTutorial(void*s,void*o){if(!ObsoleteAdvice(s))original_generic_tutorial(s,o);}
 void GenericTutorial2(void*s,void*o){if(!ObsoleteAdvice(s))original_generic_tutorial2(s,o);}
+nd::Script original_construct_tutorial=nullptr;
+nd::RValue* ConstructTutorial(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
+ // The SP tutorial's full-screen key legend uses one input profile. Personal
+ // stock strips and the configured co-op controls provide the combat cues.
+ if(ready){*(RValue*)r=RValue();return r;}
+ return original_construct_tutorial(s,o,r,n,a);
+}
 nd::Script original_spawn_tutorial=nullptr;
 nd::RValue* SpawnTutorial(void*s,void*o,nd::RValue*r,int n,nd::RValue**a){
  if(n>0&&a&&a[0]&&ObsoleteText(*(RValue*)a[0])){*(RValue*)r=RValue();return r;}
@@ -573,15 +590,50 @@ bool DrawNativeHud(void*s,void*o,int primary,double width,double height){
   Script(0x4483b0,controller);
   if(owner==2&&secondary&&!command.mutate_hud)Script(0x370b50,controller);
   if(!HasShip(owner)){access.set(controller,0x1aedb48,0);access.set(controller,0x1aedb38,0);}
+  constexpr std::uintptr_t keyCells[]={0x1af3208,0x1af3388,0x1af31e8,0x1af3318,0x1af3288};
+  std::array<RValue,5> savedKeys;
+  for(int k=0;k<5;++k){
+   auto slot=(RValue*)GlobalWrite(globals,access.id(keyCells[k]));savedKeys[k]=*slot;
+   if(owner==2||p1_custom){
+    const auto& profile=owner==1?p1_controls.Get():controls.Get();
+    auto action=(ndship::config::Action)((int)ndship::config::Action::Construct1+k);
+    int binding=profile.device==ndship::config::Device::Controller?profile.Pad(action):profile.Key(action);
+    *slot=RValue((profile.device==ndship::config::Device::Controller?binding==0:binding<0)?std::string{}:Trays::Binding(action,owner));
+   }
+  }
   native_capture_owner=owner;native_bars[owner]={};original_draw_gui(s,o);native_capture_owner=0;
+  // Construction flashes draw at the native icon coordinates. Capture them
+  // with their owner's strip so they move with the icons, using native artwork.
+  native_stock_effects[owner]=0;
+  if(HasShip(owner)){
+   int effects=Builtin("instance_number",{RValue(365)}).ToInt32();
+   for(int i=0;i<effects;++i){auto ref=Builtin("instance_find",{RValue(365),RValue(i)});auto effect=Resolve((int)ref.m_i64);
+    if(effect&&Owner(effect)==owner){original_stock_effect_draw(effect,effect);++native_stock_effects[owner];}
+   }
+  }
+  for(int k=0;k<5;++k)*(RValue*)GlobalWrite(globals,access.id(keyCells[k]))=savedKeys[k];
   double left=std::min(Read(controller,0x1b09958,0),Read(controller,0x1af4eb8,0))-3*scale;
   double right=std::max(Read(controller,0x1b09928,width),Read(controller,0x1af4e98,width))+3*scale;
   native_life_region[owner]={left,height-38*scale,std::max(1.0,right-left),26*scale};
+  // Native Controller ammo/construct geometry is shared, but every reserve,
+  // selected slot and assembly meter above was drawn under this owner's scope.
+  double stock_left=width,stock_right=0;
+  for(auto cell:{0x1af4d18u,0x1af4c78u,0x1af4bf8u,0x1af4cf8u,0x1af4ca8u,0x1af4c28u,0x1af4c58u}){
+   double x=Read(controller,cell,0);stock_left=std::min(stock_left,x);stock_right=std::max(stock_right,x+110*scale);
+  }
+  double stock_top=std::min(Read(controller,0x1af4d78,0),Read(controller,0x1af4d38,0))-12*scale;
+  double stock_bottom=std::max(Read(controller,0x1af4c88,0),Read(controller,0x1af4d68,0))+32*scale;
+  native_stock_region[owner]={stock_left-12*scale,stock_top,stock_right-stock_left+24*scale,stock_bottom-stock_top};
   if(owner==2)p2_ui_values=ReadUI(controller);
   if(secondary)WriteUI(controller,before);
   ui_overlay_active=false;
- },[&](int owner){return native_life_region[owner];},primary,scale);
+ },[&](int owner){return native_life_region[owner];},[&](int owner){return native_stock_region[owner];},primary,scale,qa_mode&&command.mutate_stock);
  if(native_hud_result.ok){++native_hud_frames;native_rect_hidden+=6;
+  if(CoopBalance::trace){static ULONGLONG stock_at=0;auto now=GetTickCount64();if(now-stock_at>=100){stock_at=now;
+   for(int owner=1;owner<=2;++owner){auto b=Resolve(powers[owner]);auto src=native_hud_result.stock_source[owner],dst=native_hud_result.stock_dest[owner];
+    std::fprintf(CoopBalance::trace,"{\"kind\":\"stock\",\"command\":%d,\"owner\":%d,\"sx\":%.3f,\"sy\":%.3f,\"sw\":%.3f,\"sh\":%.3f,\"dx\":%.3f,\"dy\":%.3f,\"dw\":%.3f,\"dh\":%.3f,\"blade\":%.4f,\"swords\":%.4f,\"mines\":%.4f,\"turrets\":%.4f,\"drones\":%.4f,\"allies\":%.4f,\"ally_progress\":%.4f,\"effects\":%d}\n",command.counter,owner,src.x,src.y,src.w,src.h,dst.x,dst.y,dst.w,dst.h,Read(b,0x1afd438,0),Read(b,0x1afd498,0),Read(b,0x1b019b8,0),Read(b,0x1afd398,0),Read(b,0x1afd368,0),Read(b,0x1afd2e8,0),Read(b,0x1aef1b8,0),native_stock_effects[owner]);
+   }std::fflush(CoopBalance::trace);
+  }}
   if(save_native_ui){native_hud.Save(1,"native-hud-1.png");native_hud.Save(2,"native-hud-2.png");save_native_ui=false;}
  }
  return native_hud_result.ok;
@@ -619,7 +671,7 @@ void DrawGUI(void*s,void*o){
  ndship::hud::State state;state.enabled=!command.nativehud;
  state.width=gui_width;state.height=gui_height;
  state.font=Builtin("draw_get_font").ToInt32();
- if(native_ok)for(int i=0;i<2;++i){auto rect=native_hud_result.dest[i+1];state.life_x[i]=rect.x;state.life_y[i]=rect.y;state.life_width[i]=rect.w;}
+ if(native_ok)for(int i=0;i<2;++i){auto rect=native_hud_result.dest[i+1];state.life_x[i]=rect.x;state.life_y[i]=rect.y;state.life_width[i]=rect.w;state.stock_y[i]=native_hud_result.stock_dest[i+1].y;}
  auto now=GetTickCount64();for(int i=0;i<2;++i)state.hint_alpha[i]=Budget(i+1)>0?0:HintOpacity(hint_until[i+1],now);state.controls_alpha=Budget(2)>0?0:state.hint_alpha[1];
 
  state.upgrade_menu=ndship::upgrade::SessionActive()&&CountUI()>0;state.upgrade_owner=ndship::upgrade::CurrentMenuOwner();
@@ -658,6 +710,7 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  ndship::SetOwnerResolver(Owner);ndship::assets::RegisterOwnershipGroups();ndship::RegisterOwnedAsset(674);
  if(!ndship::InstallContextHooks(module,access.base,Log))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.PlayerCreate",0xc41ce0,(void*)PlayerCreate,(void**)&original_player_create)||!Hook("Ship.PowersCreate",0xc77c90,(void*)PowersCreate,(void**)&original_powers_create)||!Hook("Ship.PlayerStep",0xc4a650,(void*)PlayerStep,(void**)&original_player_step)||!Hook("Ship.PlayerDestroy",0xc43c40,(void*)PlayerDestroy,(void**)&original_player_destroy))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Ship.StockEffectDraw",0x936a80,(void*)StockEffectDraw,(void**)&original_stock_effect_draw))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.PlayerStep2",0xc5b970,(void*)PlayerStep2,(void**)&original_player_step2))return AURIE_MODULE_INITIALIZATION_FAILED;
  void* keyboard_routine=nullptr;if(!AurieSuccess(api->GetNamedRoutinePointer("keyboard_check",&keyboard_routine))||!keyboard_routine)return AURIE_MODULE_INITIALIZATION_FAILED;engine_keyboard_check=(TRoutine)keyboard_routine;
  if(!ndship::InstallQueryHooks(module,api)||!HookBuiltin("window_has_focus",Focus,original_focus))return AURIE_MODULE_INITIALIZATION_FAILED;
@@ -675,6 +728,7 @@ EXPORTED AurieStatus ModuleInitialize(AurieModule* module,const fs::path& path){
  if(!Hook("Ship.UIFlash",0x371ea0,(void*)UIFlash,(void**)&original_ui_flash)||!Hook("Ship.UIPositions",0x4483b0,(void*)UIPositions,(void**)&original_ui_positions)||!Hook("Ship.UIRefresh",0x4c79f0,(void*)UIRefresh,(void**)&original_ui_refresh))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.HealthRect",ndship::hud::NativeDrawRectangleRva,(void*)HealthRectangle,(void**)&original_draw_rectangle))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.UpgradeTutorial",0xe60f70,(void*)UpgradeTutorial,(void**)&original_upgrade_tutorial)||!Hook("Ship.GenericTutorial",0xe5a940,(void*)GenericTutorial,(void**)&original_generic_tutorial)||!Hook("Ship.GenericTutorial2",0xe5bb10,(void*)GenericTutorial2,(void**)&original_generic_tutorial2))return AURIE_MODULE_INITIALIZATION_FAILED;
+ if(!Hook("Ship.ConstructTutorial",0x11dbd0,(void*)ConstructTutorial,(void**)&original_construct_tutorial))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.SpawnTutorial",0x659ed0,(void*)SpawnTutorial,(void**)&original_spawn_tutorial))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.TutorialEffect",0xbe2030,(void*)TutorialEffect,(void**)&original_tutorial_effect))return AURIE_MODULE_INITIALIZATION_FAILED;
  if(!Hook("Ship.UpgradePrompt",0xc98890,(void*)UpgradePrompt,(void**)&original_upgrade_prompt))return AURIE_MODULE_INITIALIZATION_FAILED;

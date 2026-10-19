@@ -147,7 +147,7 @@ bool KeyDown(int key){
  return (GetAsyncKeyState(key)&0x8000)!=0||Builtin("keyboard_check",{RValue(key)}).ToBoolean();
 }
 struct Geometry {double x,y,w,row;int first;};
-Geometry Layout(int owner,double width,double height){double scale=std::min(width/2400.0,height/1350.0);return {owner==1?40*scale:width-600*scale,height-220*scale,560*scale,104*scale,(trays[owner].selected/5)*5};}
+Geometry Layout(int owner,double width,double height){double scale=std::min(width/2400.0,height/1350.0);return {owner==1?40*scale:width-600*scale,height-285*scale,560*scale,104*scale,(trays[owner].selected/5)*5};}
 void Tick(){
  if(!ready||joining||transaction||ndship::lifecycle::IsTearingDown())return;
  auto controller=Resolve(controller_id);if(!controller)return;
@@ -163,7 +163,7 @@ void Tick(){
  unsigned pressed=bits&~previous_bits[owner];previous_bits[owner]=bits;if(!(bits&(owner==1&&(!p1_custom||profile.mouse_aim)?256:4)))consume_confirm[owner]=false;
   auto& tray=trays[owner];const bool requested=tray.requested;bool opening=requested||(pressed&2);tray.requested=false;
   if(qa_mode&&command.tray==owner){command.tray=0;opening=true;}
-  bool chip=owner==1&&(!p1_custom||profile.mouse_aim)&&mx<width*.24&&my>height-110*height/1350&&my<height-60*height/1350;
+  bool chip=owner==1&&(!p1_custom||profile.mouse_aim)&&mx<width*.24&&my>height-195*height/1350&&my<height-155*height/1350;
   if(chip&&(pressed&256))opening=true;
   if(opening){if(!requested||!tray.open)Toggle(owner);continue;}
   if(!tray.open)continue;
@@ -220,7 +220,7 @@ void Draw(void* self,double width,double height){
   if(!Eligible(owner)||Budget(owner)<=0)continue;
   int accent=ndship::hud::PlayerColor(owner);double chipx=owner==1?40*scale:width-600*scale;
   auto& tray=trays[owner];
-  if(!tray.open)p.FittedText(chipx,height-100*scale,"+ "+std::to_string((int)Budget(owner))+"  "+(owner==1&&!p1_custom?"Mouse middle":Binding(ndship::config::Action::Upgrade,owner)),text_color,text_scale,520*scale);if(!tray.open||tray.cards.empty())continue;
+  if(!tray.open)p.FittedText(chipx,height-185*scale,"+ "+std::to_string((int)Budget(owner))+"  "+(owner==1&&!p1_custom?"Mouse middle":Binding(ndship::config::Action::Upgrade,owner)),text_color,text_scale,520*scale);if(!tray.open||tray.cards.empty())continue;
   auto g=Layout(owner,width,height);
   for(int index=g.first;index<std::min((int)tray.cards.size(),g.first+5);++index){double x=g.x+50*scale+(index-g.first)*g.row;
    Sprite(p,tray.cards[index].sprite,x,g.y,68*scale,0xffffff);
